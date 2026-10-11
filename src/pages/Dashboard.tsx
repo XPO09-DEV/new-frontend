@@ -51,9 +51,7 @@ export default function Dashboard({
       </section>
 
       <TokenAssetsWidget
-        apiKey={import.meta.env.VITE_COINSTATS_API_KEY ?? ""}
-        baseUrl={import.meta.env.VITE_COINSTATS_API_BASE_URL || "https://openapiv1.coinstats.app"}
-        keyHeader={import.meta.env.VITE_COINSTATS_API_KEY_HEADER || "X-API-KEY"}
+        baseUrl={import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:4000"}
         visibleTokens={3}
       />
 
