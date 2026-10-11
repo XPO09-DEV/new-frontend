@@ -1,49 +1,80 @@
-@import "tailwindcss";
+:root {
+  color-scheme: light;
+  background: #ffffff;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
-@theme {
-  --color-brand: #1f7a5c;
-  --color-brand-dark: #17604a;
-  --color-soft: #e8f3ee;
+* {
+  box-sizing: border-box;
 }
 
 html,
 body,
 #root {
+  width: 100%;
   min-height: 100%;
-  min-height: 100dvh;
-}
-
-html {
-  background: #faf8f4;
+  margin: 0;
+  background: #ffffff;
 }
 
 body {
-  margin: 0;
-  background: #faf8f4;
-  color: #1c2b25;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  min-height: 100svh;
+  overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
-  overscroll-behavior-y: none;
-  padding-top: env(safe-area-inset-top);
 }
 
-input,
-select,
-textarea {
-  font-size: 16px;
+#root {
+  min-height: 100svh;
 }
 
-button {
-  cursor: pointer;
-  touch-action: manipulation;
+.mobile-canvas {
+  position: relative;
+  width: min(100vw, 56.25vh, 430px);
+  height: min(100svh, 177.7778vw, 764.45px);
+  margin-inline: auto;
+  overflow: hidden;
+  background: #ffffff;
 }
 
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
+.black-card {
+  position: absolute;
+  top: 13svh;
+  left: 4%;
+  width: 92%;
+  aspect-ratio: 320 / 201;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #050505;
 }
 
-:focus-visible {
-  outline: 2px solid #1f7a5c;
-  outline-offset: 2px;
+.sprinkles {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+@media (min-width: 600px) {
+  .black-card {
+    border-radius: 15px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .black-card {
+    animation: card-appear 420ms ease-out both;
+  }
+
+  @keyframes card-appear {
+    from {
+      opacity: 0;
+      transform: translateY(5px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 }
