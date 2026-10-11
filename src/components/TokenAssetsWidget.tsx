@@ -17,6 +17,7 @@ export interface TokenAsset {
   image: string | null;
   price: number | null;
   pct24: number | null;
+  chartPoolAddress: string | null;
   amount: number | null;
   value: number | null;
 }
@@ -70,15 +71,6 @@ type NetworkToken = {
   price: number | null;
   pct24: number | null;
   chartPoolAddress: string | null;
-};
-
-type TokenPriceResponse = {
-  data?: {
-    attributes?: {
-      token_prices?: Record<string, string | number>;
-      h24_price_change_percentage?: Record<string, string | number>;
-    };
-  };
 };
 
 type OHLCVResponse = {
