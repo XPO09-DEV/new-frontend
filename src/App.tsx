@@ -68,12 +68,6 @@ export default function App() {
           <button type="button" className="mobile-menu-button" aria-label="Open more options" aria-expanded={showMobileMenu} aria-controls="mobile-more-menu" onClick={() => setShowMobileMenu((open) => !open)}>
             <svg aria-hidden="true" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M3.5 6.5h17M3.5 12h17M3.5 17.5h17" /></svg>
           </button>
-          <div className="mobile-header-brand"><span className="brand-monogram">S</span><span><strong>Subtle Pay</strong><small>Wallet</small></span></div>
-          <div className="header-status"><span className="header-status-dot" /> WALLET DISCONNECTED</div>
-          <div className="header-actions">
-            <button type="button" className="icon-button" aria-label="Open settings" onClick={() => setActivePage("more")}><Icon name="settings" size={19} /></button>
-            <button type="button" className="header-profile" onClick={() => setActivePage("more")} aria-label="Open account settings"><Icon name="user" size={18} /></button>
-          </div>
         </header>
 
         {showMobileMenu && (
