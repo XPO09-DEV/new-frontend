@@ -1,9 +1,8 @@
-import { useState } from "react";
 import type { PageId } from "../components/BottomNav";
 import Icon from "../components/Icon";
-import MarketChart from "../components/MarketChart";
 import WalletCard from "../components/WalletCard";
-import { FIAT_CURRENCIES, type TokenSymbol } from "../data/walletData";
+import TokenAssetsWidget from "../components/TokenAssetsWidget";
+import { type TokenSymbol } from "../data/walletData";
 
 function walletGreeting(displayName: string) {
   const name = displayName.trim();
@@ -24,7 +23,6 @@ export default function Dashboard({
   onNavigate: (page: PageId) => void;
   displayName: string;
 }) {
-  const [currency, setCurrency] = useState("INR");
   const quickActions: { page: PageId; label: string; icon: "send" | "receive" | "merchant" | "more" }[] = [
     { page: "send", label: "Send", icon: "send" },
     { page: "receive", label: "Receive", icon: "receive" },
@@ -52,24 +50,16 @@ export default function Dashboard({
         </div>
       </section>
 
-      <section className="panel fx-panel">
-        <div className="panel-heading compact">
-          <div><div className="section-kicker">FIAT CURRENCIES</div><h2>Currency converter</h2></div>
-          <label className="select-wrap compact-select"><span className="sr-only">Choose currency</span><select value={currency} onChange={(event) => setCurrency(event.target.value)} aria-label="Choose display currency">{FIAT_CURRENCIES.map((item) => <option key={item.code} value={item.code}>{item.code}</option>)}</select><Icon name="chevrons-up-down" size={14} /></label>
-        </div>
-        <div className="currency-converter-row"><div><span className="muted-label">1 USD in {currency}</span><strong>—</strong><span className="tiny-note">Exchange rate unavailable</span></div><div className="currency-globe"><Icon name="globe" size={20} /></div></div>
-        <div className="rates-unavailable"><Icon name="info" size={16} /><span>Live conversion rates will appear after the rate provider is connected.</span></div>
-        <p className="panel-footnote">{FIAT_CURRENCIES.length} currencies are available for selection. Supported conversions depend on live rate availability.</p>
-      </section>
-
-      <MarketChart selectedToken={selectedToken} />
+      <TokenAssetsWidget
+        apiKey={import.meta.env.VITE_COINGECKO_API_KEY ?? ""}
+        baseUrl={import.meta.env.VITE_COINGECKO_API_BASE_URL || "https://api.coingecko.com/api/v3"}
+        keyHeader={import.meta.env.VITE_COINGECKO_API_KEY_HEADER || "x-cg-demo-api-key"}
+        visibleTokens={3}
+      />
 
 
 
-      <section className="panel activity-panel">
-        <div className="panel-heading compact"><div><div className="section-kicker">PAYMENT HISTORY</div><h2>Recent activity</h2></div><button type="button" className="text-button" onClick={() => onNavigate("activity")}>View all <Icon name="arrow-right" size={15} /></button></div>
-        <div className="empty-activity"><Icon name="activity" size={21} /><strong>No transactions yet</strong><span>Confirmed activity will appear here when the wallet is connected.</span></div>
-      </section>
+
       <div className="mobile-nav-spacer" />
     </div>
   );
