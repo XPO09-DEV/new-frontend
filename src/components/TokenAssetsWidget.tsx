@@ -23,8 +23,8 @@ export interface TokenAsset {
 }
 
 export interface TokenAssetsWidgetProps {
-  /** Backend API origin. CoinStats credentials stay on the server. */
-  baseUrl?: string;
+  /** Demo-only direct provider access. The key is exposed in the browser. */
+  apiKey?: string;
   currency?: string;
   refreshMs?: number;
   defaultTimeframe?: Timeframe;
@@ -121,7 +121,6 @@ async function getJSON<T>(url: string, headers: Record<string, string>, signal?:
 }
 
 async function fetchMonadTokens(
-  baseUrl: string,
   headers: Record<string, string>,
   signal: AbortSignal,
   currency: string,
@@ -131,8 +130,8 @@ async function fetchMonadTokens(
     page: "1",
     limit: "100",
   });
-  // The backend fixes the provider filter to blockchains=monad and keeps the API key private.
-  const response = await getJSON<CoinStatsCoinsResponse>(`${baseUrl}/market/monad/assets?${params.toString()}`, headers, signal);
+  params.set("blockchains", MONAD_BLOCKCHAIN);
+  const response = await getJSON<CoinStatsCoinsResponse>(`https://openapiv1.coinstats.app/coins?${params.toString()}`, headers, signal);
   const coins = response.result ?? [];
   const tokens = coins
     .filter((coin) => Boolean(coin.id && (coin.symbol || coin.name)))
@@ -159,7 +158,6 @@ async function fetchMonadTokens(
 }
 
 async function fetchChart(
-  baseUrl: string,
   headers: Record<string, string>,
   coinId: string,
   timeframe: Timeframe,
@@ -171,7 +169,7 @@ async function fetchChart(
     currency: currency.toUpperCase(),
   });
   const response = await getJSON<CoinStatsChartResponse>(
-    `${baseUrl}/market/monad/charts/${encodeURIComponent(coinId)}?${params.toString()}`,
+    `https://openapiv1.coinstats.app/coins/${encodeURIComponent(coinId)}/charts?${params.toString()}`,
     headers,
     signal,
   );
@@ -327,7 +325,7 @@ function PriceChart({
 }
 
 export default function TokenAssetsWidget({
-  baseUrl = "http://127.0.0.1:4000",
+  apiKey = import.meta.env.VITE_COINSTATS_API_KEY || "",
   currency = "USD",
   refreshMs = 300000,
   defaultTimeframe = "1D",
@@ -336,7 +334,7 @@ export default function TokenAssetsWidget({
   className = "",
   onSelect,
 }: TokenAssetsWidgetProps) {
-  const headers = useMemo<Record<string, string>>(() => ({}), []);
+  const headers = useMemo<Record<string, string>>(() => apiKey ? { "X-API-KEY": apiKey } : {}, [apiKey]);
   const [timeframe, setTimeframe] = useState<Timeframe>(defaultTimeframe);
   const [selectedId, setSelectedId] = useState("native-mon");
   const [expanded, setExpanded] = useState(false);
@@ -400,7 +398,8 @@ export default function TokenAssetsWidget({
     const load = async () => {
       setStatus((current) => current === "ready" ? "ready" : "loading");
       try {
-        const discovered = await fetchMonadTokens(baseUrl, headers, controller.signal, currency);
+        if (!apiKey) throw new Error("Set VITE_COINSTATS_API_KEY in your local .env file and restart Vite.");
+        const discovered = await fetchMonadTokens(headers, controller.signal, currency);
         if (controller.signal.aborted) return;
         setTokens(discovered);
         setStatus("ready");
@@ -423,7 +422,7 @@ export default function TokenAssetsWidget({
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [baseUrl, headers, refreshMs, reload, currency]);
+  }, [apiKey, headers, refreshMs, reload, currency]);
 
   const loadChart = useCallback(async (asset: TokenAsset, tf: Timeframe) => {
     if (!asset.coinId) {
@@ -438,7 +437,7 @@ export default function TokenAssetsWidget({
     setChartLoading(true);
     setChartError(null);
     try {
-      const points = await fetchChart(baseUrl, headers, asset.coinId, tf, currency, new AbortController().signal);
+      const points = await fetchChart(headers, asset.coinId, tf, currency, new AbortController().signal);
       if (!points.length) throw new ApiError(404, "No chart history is available for this token yet.");
       fetchedAt.current[key] = Date.now();
       setCharts((current) => ({ ...current, [key]: points }));
@@ -448,7 +447,7 @@ export default function TokenAssetsWidget({
       requestsInFlight.current.delete(key);
       setChartLoading(false);
     }
-  }, [baseUrl, headers, currency]);
+  }, [headers, currency]);
 
   useEffect(() => {
     setHover(null);
@@ -575,6 +574,7 @@ export default function TokenAssetsWidget({
         <span className={`ta-live ${status === "ready" && !stale ? "" : "off"}`}><i />{status === "ready" ? "Monad market data" : status === "loading" ? "Connecting to CoinStats" : "Live data unavailable"}{updatedAt ? ` · ${updatedLabel}` : ""}</span>
         <a className="ta-attribution" href="https://coinstats.app" target="_blank" rel="noreferrer">Powered by CoinStats</a>
         <small>Wallet balances require a connected wallet service.</small>
+        <small>Temporary direct API demo: the key is exposed in browser requests. Do not use in production.</small>
       </footer>
     </section>
   );
