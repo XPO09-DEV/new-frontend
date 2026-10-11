@@ -23,6 +23,7 @@ export default function App() {
   const [selectedToken, setSelectedToken] = useState<TokenSymbol>("ETH");
   const [activePage, setActivePage] = useState<PageId>("wallet");
   const [showOpening, setShowOpening] = useState(true);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setShowOpening(false), 1250);
@@ -64,6 +65,9 @@ export default function App() {
 
       <div className="workspace">
         <header className="app-header">
+          <button type="button" className="mobile-menu-button" aria-label="Open more options" aria-expanded={showMobileMenu} aria-controls="mobile-more-menu" onClick={() => setShowMobileMenu((open) => !open)}>
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M3.5 6.5h17M3.5 12h17M3.5 17.5h17" /></svg>
+          </button>
           <div className="mobile-header-brand"><span className="brand-monogram">S</span><span><strong>Subtle Pay</strong><small>Wallet</small></span></div>
           <div className="header-status"><span className="header-status-dot" /> WALLET DISCONNECTED</div>
           <div className="header-actions">
@@ -71,6 +75,19 @@ export default function App() {
             <button type="button" className="header-profile" onClick={() => setActivePage("more")} aria-label="Open account settings"><Icon name="user" size={18} /></button>
           </div>
         </header>
+
+        {showMobileMenu && (
+          <div className="mobile-menu-backdrop" onClick={() => setShowMobileMenu(false)}>
+            <nav id="mobile-more-menu" className="mobile-menu-panel" aria-label="More options" onClick={(event) => event.stopPropagation()}>
+              <div className="mobile-menu-heading">More</div>
+              {desktopItems.map((item) => (
+                <button className={activePage === item.id ? "mobile-menu-item active" : "mobile-menu-item"} key={item.id} type="button" onClick={() => { setActivePage(item.id); setShowMobileMenu(false); }}>
+                  <Icon name={item.icon} size={18} /><span>{item.label}</span>{activePage === item.id && <span className="mobile-menu-active-dot" />}
+                </button>
+              ))}
+            </nav>
+          </div>
+        )}
 
         <main className="page-scroll">
           {activePage === "wallet" && <Dashboard selectedToken={selectedToken} onTokenChange={setSelectedToken} onNavigate={setActivePage} />}
