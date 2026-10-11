@@ -51,9 +51,9 @@ export default function Dashboard({
       </section>
 
       <TokenAssetsWidget
-        apiKey={import.meta.env.VITE_COINGECKO_API_KEY ?? ""}
-        baseUrl={import.meta.env.VITE_COINGECKO_API_BASE_URL || "https://api.coingecko.com/api/v3"}
-        keyHeader={import.meta.env.VITE_COINGECKO_API_KEY_HEADER || "x-cg-demo-api-key"}
+        apiKey={import.meta.env.VITE_COINSTATS_API_KEY ?? ""}
+        baseUrl={import.meta.env.VITE_COINSTATS_API_BASE_URL || "https://openapiv1.coinstats.app"}
+        keyHeader={import.meta.env.VITE_COINSTATS_API_KEY_HEADER || "X-API-KEY"}
         visibleTokens={3}
       />
 
