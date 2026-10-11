@@ -1,6 +1,6 @@
 import Icon, { type IconName } from "./Icon";
 
-export type PageId = "wallet" | "activity" | "send" | "receive" | "merchant" | "more" | "invoice";
+export type PageId = "wallet" | "activity" | "send" | "receive" | "merchant" | "more";
 
 const items: { id: PageId; label: string; icon: IconName }[] = [
   { id: "wallet", label: "Wallet", icon: "wallet" },

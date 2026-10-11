@@ -1,6 +1,6 @@
-# Subtle Pay — Frontend Prototype
+# Subtle Pay Frontend
 
-A mobile-first React + TypeScript + Vite prototype for the Subtle Pay wallet experience.
+Mobile-first React + TypeScript + Vite application.
 
 ## Run locally
 
@@ -13,14 +13,14 @@ npm run dev
 
 Open the local URL printed by Vite.
 
-## Prototype status
+## Integration status
 
-This repository is intentionally frontend-only. It does not connect to a wallet, backend API, exchange-rate provider, blockchain, authentication provider, camera QR decoder, or merchant verification service.
+The frontend is currently independent of the backend. Wallet balances, market prices, fiat exchange rates, recipient lookup, secure authorization, QR decoding, transaction history, invoice records and merchant verification will remain unavailable until their respective services are connected.
 
-All balances, exchange values, token prices, contacts, QR patterns, and transaction activity are illustrative sample data. The Send flow only creates a local draft preview; it cannot submit a payment. The invoice preview is not proof of payment.
+Payments cannot be submitted from the current frontend. No live balances, rates or completed transactions are fabricated.
 
-The opening card animation lasts approximately 1.25 seconds. The current blue-gradient card surface and silver Subtle Pay branding are retained.
+The current blue-gradient wallet card and silver Subtle Pay branding are retained. The opening animation lasts approximately 1.25 seconds.
 
 ## Integration sequence
 
-Connect account and wallet services, live FX/market data, quote creation and expiry, authorization, QR decoding, confirmed transaction history, downloadable transaction invoices, and merchant verification only after the backend contracts and supported networks are defined.
+Connect wallet and account services first, then market and FX providers, payment quotes and expiry, secure authorization, QR decoding, confirmed transaction history and invoices, and merchant verification.
