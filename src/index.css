@@ -467,3 +467,23 @@ button, input, select { -webkit-tap-highlight-color: transparent; }
   .bottom-nav { display: grid; padding: 7px 8px calc(7px + env(safe-area-inset-bottom)); }
   .bottom-nav-item { font-size: 9px; }
 }
+
+
+/* The Monad market widget now occupies the full dashboard row. */
+@media (min-width: 761px) {
+  .dashboard-page {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 17px;
+  }
+  .dashboard-page > .page-intro,
+  .dashboard-page > .quick-actions-section,
+  .dashboard-page > .ta {
+    width: 100%;
+  }
+  .dashboard-page > .wallet-card {
+    grid-column: auto;
+  }
+}
+.dashboard-page > .ta { min-width: 0; }
