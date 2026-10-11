@@ -25,11 +25,11 @@ export default function Dashboard({
   displayName: string;
 }) {
   const [currency, setCurrency] = useState("INR");
-  const quickActions: { page: PageId; label: string; icon: "send" | "receive" | "merchant" | "more"; helper: string }[] = [
-    { page: "send", label: "Send Money", icon: "send", helper: "To a person" },
-    { page: "receive", label: "Receive Money", icon: "receive", helper: "Your address & QR" },
-    { page: "merchant", label: "Merchant Payment", icon: "merchant", helper: "Pay a business" },
-    { page: "more", label: "More", icon: "more", helper: "Account & security" },
+  const quickActions: { page: PageId; label: string; icon: "send" | "receive" | "merchant" | "more" }[] = [
+    { page: "send", label: "Send", icon: "send" },
+    { page: "receive", label: "Receive", icon: "receive" },
+    { page: "merchant", label: "Merchant", icon: "merchant" },
+    { page: "more", label: "More", icon: "more" },
   ];
 
   return (
@@ -40,6 +40,17 @@ export default function Dashboard({
 
 
       <WalletCard selectedToken={selectedToken} onTokenChange={onTokenChange} />
+
+      <section className="quick-actions-section" aria-label="Wallet actions">
+        <div className="quick-action-grid">
+          {quickActions.map((action) => (
+            <button className="quick-action" key={action.page} onClick={() => onNavigate(action.page)} type="button">
+              <span className="quick-action-icon"><Icon name={action.icon} size={22} /></span>
+              <span className="quick-action-copy"><strong>{action.label}</strong></span>
+            </button>
+          ))}
+        </div>
+      </section>
 
       <section className="panel fx-panel">
         <div className="panel-heading compact">
@@ -53,10 +64,7 @@ export default function Dashboard({
 
       <MarketChart selectedToken={selectedToken} />
 
-      <section className="quick-actions-section">
-        <div className="section-header"><div><div className="section-kicker">PAYMENTS</div><h2>Quick actions</h2></div></div>
-        <div className="quick-action-grid">{quickActions.map((action, index) => <button className="quick-action" key={action.page} onClick={() => onNavigate(action.page)} type="button"><span className={`quick-action-icon action-tone-${index}`}><Icon name={action.icon} size={21} /></span><span className="quick-action-copy"><strong>{action.label}</strong><small>{action.helper}</small></span><Icon name="arrow-right" size={16} className="quick-action-arrow" /></button>)}</div>
-      </section>
+
 
       <section className="panel activity-panel">
         <div className="panel-heading compact"><div><div className="section-kicker">PAYMENT HISTORY</div><h2>Recent activity</h2></div><button type="button" className="text-button" onClick={() => onNavigate("activity")}>View all <Icon name="arrow-right" size={15} /></button></div>
