@@ -46,7 +46,7 @@ button, input, select { -webkit-tap-highlight-color: transparent; }
 .sidebar-footer > span:last-child { margin-left: auto; }
 
 .workspace { display: flex; min-width: 0; min-height: 100svh; flex-direction: column; }
-.app-header { position: sticky; z-index: 20; top: 0; display: flex; height: 69px; min-height: 69px; align-items: center; gap: 17px; padding: 0 35px; border-bottom: 1px solid #e9ecf3; background: rgba(255,255,255,.93); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.app-header { position: sticky; z-index: 20; top: 0; display: flex; height: 54px; min-height: 54px; align-items: center; gap: 17px; padding: 0 35px; border-bottom: 1px solid #e9ecf3; background: rgba(255,255,255,.93); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
 .mobile-header-brand { display: none; align-items: center; gap: 9px; }
 .mobile-menu-button { display: none; width: 34px; height: 34px; flex: 0 0 34px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 9px; background: transparent; color: rgb(0, 0, 0); font: inherit; }
 .mobile-menu-button:hover { background: #f3f4f6; }
@@ -347,7 +347,8 @@ button, input, select { -webkit-tap-highlight-color: transparent; }
   .app-layout { display: block; min-height: 100svh; background: #f6f7fb; }
   .desktop-sidebar { display: none; }
   .workspace { min-height: 100svh; }
-  .app-header { height: 62px; min-height: 62px; justify-content: space-between; gap: 7px; padding: 0 12px; }
+  .app-header { height: 42px; min-height: 42px; justify-content: flex-start; gap: 0; padding: 0 8px; border-bottom: 0; background: #fff; }
+  .mobile-menu-button { margin-left: 0; }
   .mobile-menu-button { display: inline-flex; }
   .mobile-menu-backdrop { display: block; }
   .dashboard-page { padding-top: 13px; }
@@ -356,7 +357,7 @@ button, input, select { -webkit-tap-highlight-color: transparent; }
   .header-actions { gap: 0; margin-left: 0; }
   .header-profile { display: none; }
   .app-header > .icon-button { width: 34px; height: 34px; }
-  .page-scroll { min-height: calc(100svh - 62px); overflow: visible; }
+  .page-scroll { min-height: calc(100svh - 42px); overflow: visible; }
   .page-stack { gap: 14px; padding: 20px 16px 28px; }
   .inner-page { padding-top: 19px; }
   .page-intro h1 { font-size: 25px; }
@@ -397,8 +398,7 @@ button, input, select { -webkit-tap-highlight-color: transparent; }
 
 @media (max-width: 380px) {
   .page-stack { padding-right: 12px; padding-left: 12px; }
-  .app-header { gap: 5px; padding-right: 10px; padding-left: 10px; }
-  .header-status { gap: 4px; letter-spacing: 0; }
+  .app-header { gap: 0; padding-right: 8px; padding-left: 8px; }
   .wallet-balance-row { right: 13px; left: 13px; }
   .wallet-card-divider { right: 13px; left: 13px; }
   .wallet-flow-row { right: 13px; left: 13px; }
