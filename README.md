@@ -21,19 +21,15 @@ Payments cannot be submitted from the current frontend. No live balances, exchan
 
 ## Monad market widget
 
-The dashboard now uses CoinGecko on-chain endpoints for the **Monad network only** to discover tokens, load token prices and draw OHLCV chart history. It discovers tokens from the Monad trending-pools feed, shows the first three by default, and lets users expand the list to all tokens returned by that feed. Chart timeframes are interactive. If live data fails, the widget shows an unavailable state rather than inventing prices or drawing sample history.
+The dashboard uses the CoinStats Open API for cryptocurrency data, with the `blockchains=monad` filter for the Monad asset list. CoinStats' `/coins` endpoint supplies current prices and daily change; `/coins/{coinId}/charts` supplies history for the interactive chart (1D, 1W, 1M, 3M, 1Y and All). The widget shows three entries initially and allows expanding the currently returned list. If CoinStats does not return assets for the Monad filter on your plan, the UI shows an unavailable state rather than substituting fabricated data.
 
 1. Copy `.env.example` to `.env.local`.
-2. Add your CoinGecko API key to `VITE_COINGECKO_API_KEY`.
-3. For a Demo key, keep `VITE_COINGECKO_API_BASE_URL=https://api.coingecko.com/api/v3` and `VITE_COINGECKO_API_KEY_HEADER=x-cg-demo-api-key`.
-4. For a Pro key, use `VITE_COINGECKO_API_BASE_URL=https://pro-api.coingecko.com/api/v3` and `VITE_COINGECKO_API_KEY_HEADER=x-cg-pro-api-key`, according to your plan.
+2. Add your CoinStats Open API key to `VITE_COINSTATS_API_KEY`.
+3. Keep `VITE_COINSTATS_API_BASE_URL=https://openapiv1.coinstats.app` and `VITE_COINSTATS_API_KEY_HEADER=X-API-KEY`.
 
-**API-key security:** Vite exposes `VITE_*` variables in browser code. This setup is convenient for local testing but does not keep the key secret in a public deployment. For production, move requests behind a server-side proxy and keep the provider key there.
+**API-key security:** the browser frontend exposes `VITE_*` variables in its built JavaScript. This is suitable only for local testing with a key whose usage and restrictions you understand. For a production deployment, move the CoinStats API calls behind a server-side proxy and store the key in the backend environment.
 
-The list is independent of the connected wallet balance, so supported tokens remain visible even without a holding. Actual user balances are not yet available: a wallet/balance integration must supply holdings before the UI can report how many tokens the user owns. The widget deliberately shows balance-unavailable indicators until then.
-
-The current blue-gradient wallet card and silver Subtle Pay branding are retained. The opening animation lasts approximately 1.25 seconds.
-
+The asset list is independent of any connected wallet balance, so available Monad-listed assets can appear even when the user does not hold them. Real user balances are not inferred from market data: a wallet/balance integration must supply holdings before balances or total holdings value can be shown.
 ## Integration sequence
 
 Connect wallet and account services first, then market and FX providers, payment quotes and expiry, secure authorization, QR decoding, confirmed transaction history and invoices, and merchant verification.
