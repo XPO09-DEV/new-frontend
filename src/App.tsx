@@ -6,13 +6,15 @@ import Activity from "./pages/Activity";
 import Dashboard from "./pages/Dashboard";
 import Merchant from "./pages/Merchant";
 import More from "./pages/More";
+import Notifications from "./pages/Notifications";
 import Receive from "./pages/Receive";
 import Send from "./pages/Send";
 import { type TokenSymbol } from "./data/walletData";
 
-const desktopItems: { id: PageId; label: string; icon: "wallet" | "activity" | "send" | "receive" | "merchant" | "settings" }[] = [
+const desktopItems: { id: PageId; label: string; icon: "wallet" | "activity" | "bell" | "send" | "receive" | "merchant" | "settings" }[] = [
   { id: "wallet", label: "Wallet", icon: "wallet" },
   { id: "activity", label: "Activity", icon: "activity" },
+  { id: "notifications", label: "Notifications", icon: "bell" },
   { id: "send", label: "Send money", icon: "send" },
   { id: "receive", label: "Receive money", icon: "receive" },
   { id: "merchant", label: "Merchant centre", icon: "merchant" },
@@ -24,6 +26,29 @@ export default function App() {
   const [activePage, setActivePage] = useState<PageId>("wallet");
   const [showOpening, setShowOpening] = useState(true);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [displayName, setDisplayName] = useState(() => {
+    try {
+      return window.localStorage.getItem("subtlePayUserName")?.trim() ?? "";
+    } catch {
+      return "";
+    }
+  });
+
+  useEffect(() => {
+    const syncDisplayName = () => {
+      try {
+        setDisplayName(window.localStorage.getItem("subtlePayUserName")?.trim() ?? "");
+      } catch {
+        setDisplayName("");
+      }
+    };
+    window.addEventListener("storage", syncDisplayName);
+    window.addEventListener("subtlepay:username", syncDisplayName);
+    return () => {
+      window.removeEventListener("storage", syncDisplayName);
+      window.removeEventListener("subtlepay:username", syncDisplayName);
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setShowOpening(false), 1250);
@@ -84,12 +109,13 @@ export default function App() {
         )}
 
         <main className="page-scroll">
-          {activePage === "wallet" && <Dashboard selectedToken={selectedToken} onTokenChange={setSelectedToken} onNavigate={setActivePage} />}
+          {activePage === "wallet" && <Dashboard selectedToken={selectedToken} onTokenChange={setSelectedToken} onNavigate={setActivePage} displayName={displayName} />}
           {activePage === "send" && <Send onBack={() => setActivePage("wallet")} />}
           {activePage === "receive" && <Receive />}
           {activePage === "merchant" && <Merchant />}
           {activePage === "more" && <More />}
           {activePage === "activity" && <Activity />}
+          {activePage === "notifications" && <Notifications />}
         </main>
       </div>
       <BottomNav active={activePage} onNavigate={setActivePage} />
