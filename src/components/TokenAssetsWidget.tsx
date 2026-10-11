@@ -23,9 +23,8 @@ export interface TokenAsset {
 }
 
 export interface TokenAssetsWidgetProps {
-  apiKey?: string;
+  /** Backend API origin. CoinStats credentials stay on the server. */
   baseUrl?: string;
-  keyHeader?: string;
   currency?: string;
   refreshMs?: number;
   defaultTimeframe?: Timeframe;
@@ -100,7 +99,7 @@ function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 401 || error.status === 403) return "The API key was rejected. Check the key and header type.";
     if (error.status === 429) return "The API rate limit was reached. Try again shortly.";
-    if (error.status >= 500) return "The market data service is temporarily unavailable.";
+    if (error.status >= 500) return error.message || "The market data service is temporarily unavailable.";
     return error.message || `Request failed (${error.status}).`;
   }
   return error instanceof Error ? error.message : "Couldn't reach Monad market data.";
@@ -111,8 +110,8 @@ async function getJSON<T>(url: string, headers: Record<string, string>, signal?:
   if (!response.ok) {
     let message = "";
     try {
-      const body = await response.json() as { error?: string; message?: string };
-      message = body.error || body.message || "";
+      const body = await response.json() as { error?: string | { message?: string }; message?: string };
+      message = typeof body.error === "string" ? body.error : body.error?.message || body.message || "";
     } catch {
       // Keep the HTTP status as the useful fallback.
     }
@@ -128,14 +127,12 @@ async function fetchMonadTokens(
   currency: string,
 ): Promise<NetworkToken[]> {
   const params = new URLSearchParams({
-    blockchains: MONAD_BLOCKCHAIN,
     currency: currency.toUpperCase(),
     page: "1",
     limit: "100",
-    sortBy: "marketCap",
-    sortDir: "desc",
   });
-  const response = await getJSON<CoinStatsCoinsResponse>(`${baseUrl}/coins?${params.toString()}`, headers, signal);
+  // The backend fixes the provider filter to blockchains=monad and keeps the API key private.
+  const response = await getJSON<CoinStatsCoinsResponse>(`${baseUrl}/market/monad/assets?${params.toString()}`, headers, signal);
   const coins = response.result ?? [];
   const tokens = coins
     .filter((coin) => Boolean(coin.id && (coin.symbol || coin.name)))
@@ -174,7 +171,7 @@ async function fetchChart(
     currency: currency.toUpperCase(),
   });
   const response = await getJSON<CoinStatsChartResponse>(
-    `${baseUrl}/coins/${encodeURIComponent(coinId)}/charts?${params.toString()}`,
+    `${baseUrl}/market/monad/charts/${encodeURIComponent(coinId)}?${params.toString()}`,
     headers,
     signal,
   );
@@ -330,9 +327,7 @@ function PriceChart({
 }
 
 export default function TokenAssetsWidget({
-  apiKey = "",
-  baseUrl = "https://openapiv1.coinstats.app",
-  keyHeader = "X-API-KEY",
+  baseUrl = "http://127.0.0.1:4000",
   currency = "USD",
   refreshMs = 300000,
   defaultTimeframe = "1D",
@@ -341,19 +336,19 @@ export default function TokenAssetsWidget({
   className = "",
   onSelect,
 }: TokenAssetsWidgetProps) {
-  const headers = useMemo<Record<string, string>>(() => apiKey.trim() ? { [keyHeader]: apiKey.trim() } : {}, [apiKey, keyHeader]);
+  const headers = useMemo<Record<string, string>>(() => ({}), []);
   const [timeframe, setTimeframe] = useState<Timeframe>(defaultTimeframe);
   const [selectedId, setSelectedId] = useState("native-mon");
   const [expanded, setExpanded] = useState(false);
   const [hover, setHover] = useState<number | null>(null);
   const [tokens, setTokens] = useState<NetworkToken[]>([]);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">(apiKey.trim() ? "loading" : "error");
-  const [error, setError] = useState<string | null>(apiKey.trim() ? null : "Add VITE_COINSTATS_API_KEY to .env.local to load live Monad market data.");
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [reload, setReload] = useState(0);
   const [chartPulse, setChartPulse] = useState(0);
   const [chartLoading, setChartLoading] = useState(false);
-  const [chartError, setChartError] = useState<string | null>(apiKey.trim() ? "Waiting for live chart data." : "Add your CoinStats API key to load the Monad chart.");
+  const [chartError, setChartError] = useState<string | null>("Waiting for live chart data.");
   const [charts, setCharts] = useState<Record<string, Point[]>>({});
   const fetchedAt = useRef<Record<string, number>>({});
   const requestsInFlight = useRef<Set<string>>(new Set());
@@ -401,12 +396,6 @@ export default function TokenAssetsWidget({
     : `${Math.max(0, Math.round((Date.now() - updatedAt) / 1000))}s ago`;
 
   useEffect(() => {
-    if (!apiKey.trim()) {
-      setStatus("error");
-      setError("Add VITE_COINSTATS_API_KEY to .env.local to load live Monad market data.");
-      setChartError("Add your CoinStats API key to load the Monad chart.");
-      return;
-    }
     const controller = new AbortController();
     const load = async () => {
       setStatus((current) => current === "ready" ? "ready" : "loading");
@@ -434,7 +423,7 @@ export default function TokenAssetsWidget({
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [apiKey, baseUrl, headers, refreshMs, reload, currency]);
+  }, [baseUrl, headers, refreshMs, reload, currency]);
 
   const loadChart = useCallback(async (asset: TokenAsset, tf: Timeframe) => {
     if (!asset.coinId) {
@@ -467,17 +456,13 @@ export default function TokenAssetsWidget({
       setChartError("Waiting for a Monad token to be discovered.");
       return;
     }
-    if (!apiKey.trim()) {
-      setChartError("Add your CoinStats API key to load the Monad chart.");
-      return;
-    }
     void loadChart(selected, timeframe);
-  }, [selected?.id, selected?.address, selected?.coinId, timeframe, apiKey, loadChart]);
+  }, [selected?.id, selected?.address, selected?.coinId, timeframe, loadChart]);
 
   useEffect(() => {
-    if (chartPulse === 0 || !selected || !apiKey.trim()) return;
+    if (chartPulse === 0 || !selected) return;
     void loadChart(selected, timeframe);
-  }, [chartPulse, selected?.id, selected?.address, selected?.coinId, timeframe, apiKey, loadChart]);
+  }, [chartPulse, selected?.id, selected?.address, selected?.coinId, timeframe, loadChart]);
 
   const choose = (asset: TokenAsset) => {
     setSelectedId(asset.id);
