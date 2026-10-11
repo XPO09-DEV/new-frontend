@@ -21,15 +21,16 @@ Payments cannot be submitted from the current frontend. No live balances, exchan
 
 ## Monad market widget
 
-The dashboard uses the CoinStats Open API for cryptocurrency data, with the `blockchains=monad` filter for the Monad asset list. CoinStats' `/coins` endpoint supplies current prices and daily change; `/coins/{coinId}/charts` supplies history for the interactive chart (1D, 1W, 1M, 3M, 1Y and All). The widget shows three entries initially and allows expanding the currently returned list. If CoinStats does not return assets for the Monad filter on your plan, the UI shows an unavailable state rather than substituting fabricated data.
+The dashboard obtains market data through the Subtle Pay backend at `/market/monad/assets` and `/market/monad/charts/:coinId`. The backend calls CoinStats with the fixed `blockchains=monad` filter, and only permits chart requests for coin IDs returned by that Monad-filtered lookup. The API key is stored on the backend and never sent to the browser.
 
 1. Copy `.env.example` to `.env.local`.
-2. Add your CoinStats Open API key to `VITE_COINSTATS_API_KEY`.
-3. Keep `VITE_COINSTATS_API_BASE_URL=https://openapiv1.coinstats.app` and `VITE_COINSTATS_API_KEY_HEADER=X-API-KEY`.
+2. Keep `VITE_API_BASE_URL=http://127.0.0.1:4000` for local development.
+3. Configure `COINSTATS_API_KEY` in the backend's ignored `.env` file; use the same setting in your backend hosting environment for deployment.
+4. Start/restart the backend and then start the frontend.
 
-**API-key security:** the browser frontend exposes `VITE_*` variables in its built JavaScript. This is suitable only for local testing with a key whose usage and restrictions you understand. For a production deployment, move the CoinStats API calls behind a server-side proxy and store the key in the backend environment.
+The widget shows three listed coins at first and provides **See more** for the additional results returned by CoinStats. Chart ranges are 1D, 1W, 1M, 3M, 1Y and All. If CoinStats returns an error or doesn't list assets for Monad, the widget shows an unavailable state instead of fabricated data.
 
-The asset list is independent of any connected wallet balance, so available Monad-listed assets can appear even when the user does not hold them. Real user balances are not inferred from market data: a wallet/balance integration must supply holdings before balances or total holdings value can be shown.
+Token balances are separate from price listings. The wallet currently does not provide on-chain holdings to this market widget, so balances remain unavailable until wallet integration supplies them.
 ## Integration sequence
 
 Connect wallet and account services first, then market and FX providers, payment quotes and expiry, secure authorization, QR decoding, confirmed transaction history and invoices, and merchant verification.
