@@ -151,10 +151,13 @@ function uniqueTokens(response: PoolsResponse): NetworkToken[] {
       {
         id: pool.relationships?.base_token?.data?.id,
         price: pool.attributes?.base_token_price_usd,
+        pct24,
       },
       {
         id: pool.relationships?.quote_token?.data?.id,
         price: pool.attributes?.quote_token_price_usd,
+        // A pair's percent change describes the base token; don't mislabel it as the quote token's return.
+        pct24: null,
       },
     ];
     for (const relation of relations) {
@@ -165,7 +168,7 @@ function uniqueTokens(response: PoolsResponse): NetworkToken[] {
       metadataById.set(relation.id, {
         poolAddress: poolAddress || null,
         price: priceNumber != null && Number.isFinite(priceNumber) ? priceNumber : null,
-        pct24,
+        pct24: relation.pct24,
       });
     }
   }
@@ -398,7 +401,7 @@ export default function TokenAssetsWidget({
   baseUrl = "https://api.coingecko.com/api/v3",
   keyHeader = "x-cg-demo-api-key",
   currency = "usd",
-  refreshMs = 60000,
+  refreshMs = 300000,
   defaultTimeframe = "1D",
   visibleTokens = 3,
   holdings = [],
@@ -415,11 +418,17 @@ export default function TokenAssetsWidget({
   const [error, setError] = useState<string | null>(apiKey.trim() ? null : "Add VITE_COINGECKO_API_KEY to .env.local to load live Monad market data.");
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [reload, setReload] = useState(0);
+  const [chartPulse, setChartPulse] = useState(0);
   const [chartLoading, setChartLoading] = useState(false);
   const [chartError, setChartError] = useState<string | null>(apiKey.trim() ? "Waiting for live chart data." : "Add your CoinGecko API key to load the Monad chart.");
   const [charts, setCharts] = useState<Record<string, Point[]>>({});
   const fetchedAt = useRef<Record<string, number>>({});
   const requestsInFlight = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setChartPulse((pulse) => pulse + 1), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const assets = useMemo<TokenAsset[]>(() => {
     const source = tokens.length ? tokens : [NATIVE_FALLBACK];
@@ -530,7 +539,12 @@ export default function TokenAssetsWidget({
       return;
     }
     void loadChart(selected, timeframe);
-  }, [selected?.id, selected?.address, timeframe, apiKey, loadChart]);
+  }, [selected?.id, selected?.address, selected?.chartPoolAddress, timeframe, apiKey, loadChart]);
+
+  useEffect(() => {
+    if (chartPulse === 0 || !selected || !apiKey.trim()) return;
+    void loadChart(selected, timeframe);
+  }, [chartPulse, selected?.id, selected?.address, selected?.chartPoolAddress, timeframe, apiKey, loadChart]);
 
   const choose = (asset: TokenAsset) => {
     setSelectedId(asset.id);
