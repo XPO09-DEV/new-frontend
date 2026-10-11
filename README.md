@@ -19,18 +19,17 @@ The frontend is currently independent of the backend. Wallet balances, recipient
 
 Payments cannot be submitted from the current frontend. No live balances, exchange rates or completed transactions are fabricated.
 
-## Monad market widget
+## Monad market widget — temporary demo mode
 
-The dashboard obtains market data through the Subtle Pay backend at `/market/monad/assets` and `/market/monad/charts/:coinId`. The backend calls CoinStats with the fixed `blockchains=monad` filter, and only permits chart requests for coin IDs returned by that Monad-filtered lookup. The API key is stored on the backend and never sent to the browser.
+For local viewing only, the dashboard calls the CoinStats Open API directly from the browser and requests assets filtered to the Monad blockchain. Chart ranges are 1D, 1W, 1M, 3M, 1Y and All.
 
-1. Copy `.env.example` to `.env.local`.
-2. Keep `VITE_API_BASE_URL=http://127.0.0.1:4000` for local development.
-3. Configure `COINSTATS_API_KEY` in the backend's ignored `.env` file; use the same setting in your backend hosting environment for deployment.
-4. Start/restart the backend and then start the frontend.
+1. Create a local `.env` file from `.env.example`.
+2. Put your CoinStats key in `VITE_COINSTATS_API_KEY`.
+3. Restart Vite after changing the environment file.
 
-The widget shows three listed coins at first and provides **See more** for the additional results returned by CoinStats. Chart ranges are 1D, 1W, 1M, 3M, 1Y and All. If CoinStats returns an error or doesn't list assets for Monad, the widget shows an unavailable state instead of fabricated data.
+**Security warning:** Vite variables prefixed with `VITE_` are bundled into client-side code. Anyone using the app can inspect the key in browser requests. This is strictly for temporary local testing; do not deploy this configuration publicly. For production, proxy CoinStats requests through a server and store the key only on that server.
 
-Token balances are separate from price listings. The wallet currently does not provide on-chain holdings to this market widget, so balances remain unavailable until wallet integration supplies them.
+Wallet balances are not provided by CoinStats and remain unavailable until wallet integration supplies them.
 ## Integration sequence
 
 Connect wallet and account services first, then market and FX providers, payment quotes and expiry, secure authorization, QR decoding, confirmed transaction history and invoices, and merchant verification.
