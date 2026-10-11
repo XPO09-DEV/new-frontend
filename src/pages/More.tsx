@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Icon, { type IconName } from "../components/Icon";
+import CurrencyPreference from "../components/CurrencyPreference";
 
 type SectionId = "account" | "security" | "merchant" | "privacy";
 
@@ -29,6 +30,7 @@ const groups: { id: SectionId; title: string; description: string; icon: IconNam
 export default function More() {
   const [expanded, setExpanded] = useState<SectionId | null>("account");
   const [notice, setNotice] = useState("");
+  const [currencySettingsOpen, setCurrencySettingsOpen] = useState(false);
 
   return (
     <div className="page-stack inner-page">
@@ -48,11 +50,23 @@ export default function More() {
               <span className="settings-group-copy"><strong>{group.title}</strong><small>{group.description}</small></span>
               <Icon name="chevron-down" size={18} className={expanded === group.id ? "group-chevron rotated" : "group-chevron"} />
             </button>
-            {expanded === group.id && <div className="settings-rows">{group.rows.map((row) => <button className="settings-row" type="button" key={row.title} onClick={() => setNotice(`${row.title} is unavailable until account services are connected.`)}><span className="settings-row-icon"><Icon name={row.icon} size={17} /></span><span><strong>{row.title}</strong><small>{row.description}</small></span><Icon name="arrow-right" size={15} /></button>)}</div>}
+            {expanded === group.id && <div className="settings-rows">{group.rows.map((row) => (
+              <button className="settings-row" type="button" key={row.title} onClick={() => {
+                if (row.title === "Currency preference") {
+                  setCurrencySettingsOpen((open) => !open);
+                  setNotice("");
+                } else {
+                  setNotice(`${row.title} is unavailable until account services are connected.`);
+                }
+              }} aria-expanded={row.title === "Currency preference" ? currencySettingsOpen : undefined}>
+                <span className="settings-row-icon"><Icon name={row.icon} size={17} /></span><span><strong>{row.title}</strong><small>{row.description}</small></span><Icon name="arrow-right" size={15} />
+              </button>
+            ))}</div>}
           </section>
         ))}
       </div>
 
+      {currencySettingsOpen && <CurrencyPreference />}
       {notice && <div className="inline-notice"><Icon name="info" size={16} /><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice"><Icon name="close" size={15} /></button></div>}
     </div>
   );

@@ -51,8 +51,9 @@ export default function Dashboard({
       </section>
 
       <TokenAssetsWidget
-        visibleTokens={3}
-      />
+        apiKey={import.meta.env.VITE_COINGECKO_API_KEY}
+        visibleHeld={3}
+        />
 
 
 

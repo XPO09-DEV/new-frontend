@@ -1,0 +1,12 @@
+.currency-pref-card { margin-top: 14px; padding: 16px; border: 1px solid var(--border, #e8ebf2); border-radius: 18px; background: var(--card, #fff); box-shadow: 0 8px 24px rgba(16,24,40,.05); }
+.currency-pref-heading-row { display: flex; align-items: flex-start; gap: 12px; }
+.currency-pref-symbol { display: grid; place-items: center; width: 42px; height: 42px; flex: none; border-radius: 13px; background: #eef3fe; color: #4285f4; font-size: 21px; font-weight: 700; }
+.currency-pref-heading-row h2 { margin: 0; color: var(--text, #161e36); font-size: 15px; font-weight: 700; line-height: 1.3; }
+.currency-pref-heading-row p { margin: 5px 0 0; color: var(--muted, #8b93a7); font-size: 12px; line-height: 1.45; }
+.currency-pref-label { display: block; margin: 17px 0 7px; color: var(--text, #161e36); font-size: 12px; font-weight: 600; }
+.currency-pref-select { display: block; width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--border, #e8ebf2); border-radius: 11px; background: #fff; color: var(--text, #161e36); font: inherit; font-size: 13px; }
+.currency-pref-select:focus-visible, .currency-pref-save:focus-visible { outline: 2px solid #4285f4; outline-offset: 2px; }
+.currency-pref-save { display: inline-flex; justify-content: center; align-items: center; min-height: 40px; margin-top: 12px; padding: 0 15px; border: 0; border-radius: 11px; background: #4285f4; color: white; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.currency-pref-save:hover { background: #3274e7; }
+.currency-pref-feedback { margin: 9px 0 0; color: var(--muted, #8b93a7); font-size: 11px; line-height: 1.4; }
+.currency-pref-feedback.saved { color: #13885e; font-weight: 600; }
