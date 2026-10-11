@@ -51,7 +51,6 @@ export default function Dashboard({
       </section>
 
       <TokenAssetsWidget
-        baseUrl={import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:4000"}
         visibleTokens={3}
       />
 
