@@ -104,3 +104,6 @@
 @media (prefers-reduced-motion: reduce) {
   .ta *, .ta *::before, .ta *::after { animation: none !important; transition: none !important; }
 }
+
+.ta-attribution { display: inline-flex; align-items: center; width: fit-content; color: #737d92; font-size: 10px; font-weight: 650; line-height: 1.25; text-decoration: underline; text-decoration-color: #c9cfda; text-underline-offset: 2px; }
+.ta-attribution:hover { color: #202b42; }
