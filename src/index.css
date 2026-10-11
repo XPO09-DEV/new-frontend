@@ -66,13 +66,13 @@ body {
   top: 17px;
   left: 18px;
   display: inline-block;
-  color: #c7cbd3;
-  background: linear-gradient(180deg, #f1f2f5 0%, #c1c5ce 45%, #969ca8 100%);
+  color: #f0f2f6;
+  background: linear-gradient(180deg, #ffffff 0%, #f1f3f7 22%, #dfe3ea 48%, #c5cbd5 72%, #eef0f4 100%);
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
-  font-size: clamp(13px, 3.8vw, 16px);
+  font-size: clamp(15px, 4.5vw, 19px);
   font-weight: 600;
   letter-spacing: -0.045em;
   line-height: 1.2;
@@ -90,6 +90,6 @@ body {
   .card-brand {
     top: 19px;
     left: 20px;
-    font-size: 16px;
+    font-size: 19px;
   }
 }
