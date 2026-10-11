@@ -572,8 +572,9 @@ export default function TokenAssetsWidget({
       )}
 
       <footer className="ta-foot">
-        <span className={`ta-live ${status === "ready" && !stale ? "" : "off"}`}><i />{status === "ready" ? "CoinStats · Monad" : status === "loading" ? "Connecting to CoinStats" : "Live data unavailable"}{updatedAt ? ` · ${updatedLabel}` : ""}</span>
-        <small>Market data is sourced from CoinStats. Wallet balances require a connected wallet service.</small>
+        <span className={`ta-live ${status === "ready" && !stale ? "" : "off"}`}><i />{status === "ready" ? "Monad market data" : status === "loading" ? "Connecting to CoinStats" : "Live data unavailable"}{updatedAt ? ` · ${updatedLabel}` : ""}</span>
+        <a className="ta-attribution" href="https://coinstats.app" target="_blank" rel="noreferrer">Powered by CoinStats</a>
+        <small>Wallet balances require a connected wallet service.</small>
       </footer>
     </section>
   );
