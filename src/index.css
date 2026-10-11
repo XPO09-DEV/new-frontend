@@ -61,9 +61,35 @@ body {
   -webkit-backdrop-filter: blur(22px) saturate(155%);
 }
 
+.card-brand {
+  position: absolute;
+  top: 17px;
+  left: 18px;
+  display: inline-block;
+  color: #c7cbd3;
+  background: linear-gradient(180deg, #f1f2f5 0%, #c1c5ce 45%, #969ca8 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+  font-size: clamp(13px, 3.8vw, 16px);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 1.2;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* Gradients stay inside the card. No edge highlights or depth effects. */
 @media (min-width: 600px) {
   .glass-card {
     border-radius: 16px;
+  }
+
+  .card-brand {
+    top: 19px;
+    left: 20px;
+    font-size: 16px;
   }
 }
