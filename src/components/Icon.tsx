@@ -5,7 +5,7 @@ export type IconName =
   | "bell" | "chevron-down" | "copy" | "check" | "clock" | "shield" | "document" | "download" | "scan" | "upload"
   | "settings" | "user" | "fingerprint" | "refresh" | "arrow-left" | "search" | "close" | "globe" | "building"
   | "trend-up" | "info" | "receipt" | "arrow-right" | "alert" | "lock" | "file" | "link" | "check-circle"
-  | "logout" | "smartphone" | "credit-card" | "key" | "sliders" | "chevrons-up-down";
+  | "logout" | "smartphone" | "credit-card" | "key" | "sliders" | "chevrons-up-down" | "qr";
 
 const glyphs: Record<IconName, ReactNode> = {
   wallet: <><rect x="3" y="5" width="18" height="15" rx="3" /><path d="M3 9h18" /><path d="M16 14h.01" /><path d="M6 5V3h12v2" /></>,
@@ -50,6 +50,7 @@ const glyphs: Record<IconName, ReactNode> = {
   key: <><circle cx="8" cy="15" r="5" /><path d="m12 12 8-8 2 2-2 2 2 2-3 3-2-2-2 2" /></>,
   sliders: <><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" /></>,
   "chevrons-up-down": <><path d="m7 15 5 5 5-5M7 9l5-5 5 5" /></>,
+  qr: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3h-3zM20 14v2M17 20h4M20 18v3" /></>,
 };
 
 export default function Icon({ name, size = 20, className }: { name: IconName; size?: number; className?: string }) {
