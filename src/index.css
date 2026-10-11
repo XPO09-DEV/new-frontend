@@ -39,94 +39,31 @@ body {
   background: #ffffff;
 }
 
-.card-frame {
+/* One flat, 2D card surface: no raised frame, outline, bevel, or drop shadow. */
+.glass-card {
   position: absolute;
   top: 13svh;
   left: 4%;
   width: 92%;
   aspect-ratio: 320 / 201;
-  padding: 3px;
-  isolation: isolate;
-  overflow: visible;
-  border-radius: 14px;
-  background: linear-gradient(
-    128deg,
-    #9abaff 0%,
-    #5f8fec 11%,
-    #3b65bd 23%,
-    #83a8ff 37%,
-    #456ec8 51%,
-    #25478d 64%,
-    #7299ed 78%,
-    #b0caff 91%,
-    #6488dc 100%
-  );
-  box-shadow:
-    0 0 3px 1px rgba(132, 171, 255, 0.86),
-    0 0 13px 2px rgba(81, 129, 231, 0.64),
-    0 0 28px 4px rgba(69, 111, 205, 0.36),
-    0 0 48px rgba(57, 98, 183, 0.2),
-    inset 0 0 7px rgba(226, 237, 255, 0.58);
-}
-
-.glass-card {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  isolation: isolate;
   overflow: hidden;
-  border: 1px solid rgba(210, 226, 255, 0.3);
-  border-radius: 11px;
+  border: 0;
+  border-radius: 14px;
   background:
-    radial-gradient(ellipse at 8% 10%, rgba(134, 175, 255, 0.62) 0%, rgba(87, 134, 231, 0.28) 20%, transparent 49%),
-    radial-gradient(ellipse at 88% 13%, rgba(80, 132, 249, 0.62) 0%, rgba(51, 91, 181, 0.24) 27%, transparent 57%),
-    radial-gradient(ellipse at 4% 78%, rgba(58, 102, 203, 0.48) 0%, rgba(41, 76, 155, 0.18) 28%, transparent 56%),
-    radial-gradient(ellipse at 95% 83%, rgba(105, 149, 244, 0.48) 0%, rgba(47, 84, 166, 0.2) 28%, transparent 58%),
-    radial-gradient(ellipse at 50% 50%, rgba(24, 48, 94, 0.55) 0%, rgba(7, 17, 39, 0.58) 54%, rgba(4, 9, 22, 0.72) 100%),
-    linear-gradient(126deg, rgba(24, 43, 80, 0.38), rgba(7, 14, 31, 0.24) 48%, rgba(26, 46, 88, 0.4));
-  box-shadow:
-    inset 0 0 0 1px rgba(235, 242, 255, 0.06),
-    inset 0 0 28px rgba(116, 158, 255, 0.18);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
+    radial-gradient(ellipse 78% 90% at 4% 3%, rgba(133, 174, 255, 0.8) 0%, rgba(93, 139, 235, 0.42) 31%, transparent 68%),
+    radial-gradient(ellipse 76% 91% at 98% 5%, rgba(83, 127, 233, 0.82) 0%, rgba(65, 104, 204, 0.42) 34%, transparent 69%),
+    radial-gradient(ellipse 84% 86% at 0% 100%, rgba(67, 112, 214, 0.78) 0%, rgba(47, 83, 166, 0.32) 40%, transparent 72%),
+    radial-gradient(ellipse 84% 90% at 100% 100%, rgba(120, 159, 246, 0.78) 0%, rgba(64, 105, 199, 0.4) 38%, transparent 72%),
+    radial-gradient(ellipse 68% 100% at 48% 48%, rgba(27, 54, 106, 0.82) 0%, rgba(16, 34, 71, 0.72) 52%, transparent 100%),
+    linear-gradient(128deg, #294a8b 0%, #132956 43%, #1b376f 68%, #304f91 100%);
+  background-blend-mode: screen, screen, screen, screen, normal, normal;
+  backdrop-filter: blur(22px) saturate(155%);
+  -webkit-backdrop-filter: blur(22px) saturate(155%);
 }
 
-.glass-card::before {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.19) 0%, rgba(255, 255, 255, 0.04) 22%, transparent 45%),
-    linear-gradient(27deg, rgba(106, 149, 242, 0.13), transparent 43%, rgba(174, 201, 255, 0.12)),
-    radial-gradient(ellipse at 50% 0%, rgba(190, 213, 255, 0.16), transparent 56%);
-  content: "";
-  pointer-events: none;
-}
-
-.glass-card::after {
-  position: absolute;
-  inset: 1px;
-  border: 1px solid rgba(201, 220, 255, 0.12);
-  border-radius: 10px;
-  box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.14),
-    inset 1px 0 16px rgba(119, 159, 255, 0.13),
-    inset -1px 0 16px rgba(119, 159, 255, 0.13),
-    inset 0 -1px 12px rgba(87, 128, 221, 0.1);
-  content: "";
-  pointer-events: none;
-}
-
+/* Gradients stay inside the card. No edge highlights or depth effects. */
 @media (min-width: 600px) {
-  .card-frame {
-    border-radius: 17px;
-  }
-
   .glass-card {
-    border-radius: 14px;
-  }
-
-  .glass-card::after {
-    border-radius: 13px;
+    border-radius: 16px;
   }
 }
