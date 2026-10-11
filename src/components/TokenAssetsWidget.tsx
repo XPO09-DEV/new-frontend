@@ -47,6 +47,12 @@ type TokenResource = {
 
 type PoolResource = {
   id: string;
+  attributes?: {
+    address?: string;
+    base_token_price_usd?: string | number;
+    quote_token_price_usd?: string | number;
+    price_change_percentage?: { h24?: string | number };
+  };
   relationships?: {
     base_token?: { data?: { id?: string } };
     quote_token?: { data?: { id?: string } };
@@ -61,6 +67,9 @@ type NetworkToken = {
   symbol: string;
   name: string;
   image: string | null;
+  price: number | null;
+  pct24: number | null;
+  chartPoolAddress: string | null;
 };
 
 type TokenPriceResponse = {
@@ -95,6 +104,9 @@ const NATIVE_FALLBACK: NetworkToken = {
   symbol: "MON",
   name: "Monad",
   image: null,
+  price: null,
+  pct24: null,
+  chartPoolAddress: null,
 };
 
 class ApiError extends Error {
@@ -133,14 +145,42 @@ async function getJSON<T>(url: string, headers: Record<string, string>, signal?:
 function uniqueTokens(response: PoolsResponse): NetworkToken[] {
   const resources = response.included ?? [];
   const byId = new Map(resources.filter((r) => r.type === "token" && r.attributes?.address).map((r) => [r.id, r]));
-  const orderedIds = (response.data ?? []).flatMap((pool) => [
-    pool.relationships?.base_token?.data?.id,
-    pool.relationships?.quote_token?.data?.id,
-  ]).filter((id): id is string => Boolean(id));
-  const ids = [...orderedIds, ...byId.keys()];
+  const metadataById = new Map<string, { poolAddress: string | null; price: number | null; pct24: number | null }>();
+  const orderedIds: string[] = [];
+
+  for (const pool of response.data ?? []) {
+    const poolAddress = pool.attributes?.address
+      || pool.id.slice(pool.id.indexOf("_") + 1)
+      || null;
+    const pct = pool.attributes?.price_change_percentage?.h24;
+    const pctNumber = pct == null ? null : Number(pct);
+    const pct24 = pctNumber != null && Number.isFinite(pctNumber) ? pctNumber : null;
+    const relations = [
+      {
+        id: pool.relationships?.base_token?.data?.id,
+        price: pool.attributes?.base_token_price_usd,
+      },
+      {
+        id: pool.relationships?.quote_token?.data?.id,
+        price: pool.attributes?.quote_token_price_usd,
+      },
+    ];
+    for (const relation of relations) {
+      if (!relation.id) continue;
+      orderedIds.push(relation.id);
+      if (metadataById.has(relation.id)) continue;
+      const priceNumber = relation.price == null ? null : Number(relation.price);
+      metadataById.set(relation.id, {
+        poolAddress: poolAddress || null,
+        price: priceNumber != null && Number.isFinite(priceNumber) ? priceNumber : null,
+        pct24,
+      });
+    }
+  }
+
   const seen = new Set<string>();
   const tokens: NetworkToken[] = [];
-  for (const id of ids) {
+  for (const id of [...orderedIds, ...byId.keys()]) {
     const resource = byId.get(id);
     const address = resource?.attributes?.address?.trim();
     if (!resource || !address) continue;
@@ -148,55 +188,43 @@ function uniqueTokens(response: PoolsResponse): NetworkToken[] {
     if (seen.has(key)) continue;
     seen.add(key);
     const symbol = resource.attributes?.symbol?.trim() || "TOKEN";
+    const market = metadataById.get(id);
     tokens.push({
       id: key,
       address,
       symbol: symbol.toUpperCase(),
       name: resource.attributes?.name?.trim() || symbol.toUpperCase(),
       image: resource.attributes?.image_url || null,
+      price: market?.price ?? null,
+      pct24: market?.pct24 ?? null,
+      chartPoolAddress: market?.poolAddress ?? null,
     });
   }
   return tokens;
 }
 
 async function fetchMonadTokens(baseUrl: string, headers: Record<string, string>, signal: AbortSignal) {
-  const url = `${baseUrl}/onchain/networks/${NETWORK}/trending_pools?include=base_token,quote_token&page=1&duration=24h`;
-  const response = await getJSON<PoolsResponse>(url, headers, signal);
+  // Three pages gives a broader token catalogue without crawling an unbounded on-chain universe.
+  const pages = await Promise.all([1, 2, 3].map((page) =>
+    getJSON<PoolsResponse>(
+      `${baseUrl}/onchain/networks/${NETWORK}/trending_pools?include=base_token,quote_token&page=${page}&duration=24h`,
+      headers,
+      signal,
+    ),
+  ));
+  const response: PoolsResponse = {
+    data: pages.flatMap((page) => page.data ?? []),
+    included: pages.flatMap((page) => page.included ?? []),
+  };
   const tokens = uniqueTokens(response);
   if (!tokens.length) throw new ApiError(404, "No token metadata was returned for Monad's trending pools.");
   return tokens;
 }
 
-async function fetchTokenPrices(
-  baseUrl: string,
-  headers: Record<string, string>,
-  tokens: NetworkToken[],
-  signal: AbortSignal,
-): Promise<Record<string, { price: number | null; pct24: number | null }>> {
-  const addresses = tokens.map((token) => token.address);
-  if (!addresses.length) return {};
-  const url = `${baseUrl}/onchain/simple/networks/${NETWORK}/token_price/${addresses.join(",")}?include_24hr_price_change=true`;
-  const response = await getJSON<TokenPriceResponse>(url, headers, signal);
-  const prices = response.data?.attributes?.token_prices ?? {};
-  const changes = response.data?.attributes?.h24_price_change_percentage ?? {};
-  const output: Record<string, { price: number | null; pct24: number | null }> = {};
-  for (const token of tokens) {
-    const key = token.address.toLowerCase();
-    const price = prices[key] == null ? prices[token.address] : prices[key];
-    const change = changes[key] == null ? changes[token.address] : changes[key];
-    const priceNumber = price == null ? null : Number(price);
-    const changeNumber = change == null ? null : Number(change);
-    output[key] = {
-      price: priceNumber != null && Number.isFinite(priceNumber) ? priceNumber : null,
-      pct24: changeNumber != null && Number.isFinite(changeNumber) ? changeNumber : null,
-    };
-  }
-  return output;
-}
-
 async function fetchChart(
   baseUrl: string,
   headers: Record<string, string>,
+  poolAddress: string,
   tokenAddress: string,
   timeframe: Timeframe,
   signal: AbortSignal,
@@ -207,9 +235,10 @@ async function fetchChart(
       aggregate: String(config.aggregate),
       limit: String(config.limit),
       currency: "usd",
+      token: tokenAddress,
     });
     if (before) params.set("before_timestamp", String(before));
-    const url = `${baseUrl}/onchain/networks/${NETWORK}/tokens/${encodeURIComponent(tokenAddress)}/ohlcv/${config.interval}?${params.toString()}`;
+    const url = `${baseUrl}/onchain/networks/${NETWORK}/pools/${encodeURIComponent(poolAddress)}/ohlcv/${config.interval}?${params.toString()}`;
     const response = await getJSON<OHLCVResponse>(url, headers, signal);
     return (response.data?.attributes?.ohlcv_list ?? [])
       .filter((row) => Number.isFinite(row[0]) && Number.isFinite(row[4]))
@@ -377,7 +406,7 @@ export default function TokenAssetsWidget({
   baseUrl = "https://api.coingecko.com/api/v3",
   keyHeader = "x-cg-demo-api-key",
   currency = "usd",
-  refreshMs = 30000,
+  refreshMs = 60000,
   defaultTimeframe = "1D",
   visibleTokens = 3,
   holdings = [],
@@ -390,7 +419,6 @@ export default function TokenAssetsWidget({
   const [expanded, setExpanded] = useState(false);
   const [hover, setHover] = useState<number | null>(null);
   const [tokens, setTokens] = useState<NetworkToken[]>([]);
-  const [prices, setPrices] = useState<Record<string, { price: number | null; pct24: number | null }>>({});
   const [status, setStatus] = useState<"loading" | "ready" | "error">(apiKey.trim() ? "loading" : "error");
   const [error, setError] = useState<string | null>(apiKey.trim() ? null : "Add VITE_COINGECKO_API_KEY to .env.local to load live Monad market data.");
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
@@ -408,19 +436,18 @@ export default function TokenAssetsWidget({
       balances.set(holding.id.toLowerCase(), (balances.get(holding.id.toLowerCase()) ?? 0) + holding.amount);
     }
     return source.map((token) => {
-      const priceInfo = prices[token.id] ?? prices[token.address.toLowerCase()];
-      const price = priceInfo?.price ?? null;
+      const price = token.price;
       const hasBalance = balances.has(token.id) || balances.has(token.address.toLowerCase());
       const balance = hasBalance ? balances.get(token.id) ?? balances.get(token.address.toLowerCase()) ?? 0 : null;
       return {
         ...token,
         price,
-        pct24: priceInfo?.pct24 ?? null,
+        pct24: token.pct24,
         amount: balance,
         value: balance != null && price != null ? balance * price : null,
       };
     });
-  }, [tokens, prices, holdings]);
+  }, [tokens, holdings]);
 
   const selected = assets.find((asset) => asset.id === selectedId) ?? assets[0] ?? null;
   const selectedPrice = selected?.price ?? null;
@@ -453,9 +480,6 @@ export default function TokenAssetsWidget({
         const discovered = await fetchMonadTokens(baseUrl, headers, controller.signal);
         if (controller.signal.aborted) return;
         setTokens(discovered);
-        const nextPrices = await fetchTokenPrices(baseUrl, headers, discovered, controller.signal);
-        if (controller.signal.aborted) return;
-        setPrices(nextPrices);
         setStatus("ready");
         setError(null);
         setUpdatedAt(Date.now());
@@ -479,8 +503,8 @@ export default function TokenAssetsWidget({
   }, [apiKey, baseUrl, headers, refreshMs, reload]);
 
   const loadChart = useCallback(async (asset: TokenAsset, tf: Timeframe) => {
-    if (!asset.address) {
-      setChartError("Live MON chart history will appear when the on-chain token feed is available.");
+    if (!asset.address || !asset.chartPoolAddress) {
+      setChartError("Live chart history for this coin is not available from the current Monad pool feed.");
       setChartLoading(false);
       return;
     }
@@ -491,7 +515,7 @@ export default function TokenAssetsWidget({
     setChartLoading(true);
     setChartError(null);
     try {
-      const points = await fetchChart(baseUrl, headers, asset.address, tf, new AbortController().signal);
+      const points = await fetchChart(baseUrl, headers, asset.chartPoolAddress, asset.address, tf, new AbortController().signal);
       if (!points.length) throw new ApiError(404, "No chart history is available for this token yet.");
       fetchedAt.current[key] = Date.now();
       setCharts((current) => ({ ...current, [key]: points }));
