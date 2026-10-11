@@ -29,7 +29,6 @@ export default function Dashboard({
         <button className="icon-button notification-button" type="button" aria-label="Open account settings" onClick={() => onNavigate("more")}><Icon name="bell" size={19} /></button>
       </div>
 
-      <div className="connection-banner"><Icon name="info" size={17} /><span><strong>Wallet not connected.</strong> Balances, exchange rates and transaction history will appear when services are connected.</span></div>
 
       <WalletCard selectedToken={selectedToken} onTokenChange={onTokenChange} />
 
