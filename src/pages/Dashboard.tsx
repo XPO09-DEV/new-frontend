@@ -5,14 +5,24 @@ import MarketChart from "../components/MarketChart";
 import WalletCard from "../components/WalletCard";
 import { FIAT_CURRENCIES, type TokenSymbol } from "../data/walletData";
 
+function walletGreeting(displayName: string) {
+  const name = displayName.trim();
+  if (!name) return "Your wallet";
+  if (name.includes("@")) return name.toLowerCase();
+  const firstName = name.split(/\s+/)[0].toLowerCase().replace(/[^a-z0-9._-]/g, "");
+  return firstName ? `${firstName}@monad` : "Your wallet";
+}
+
 export default function Dashboard({
   selectedToken,
   onTokenChange,
   onNavigate,
+  displayName,
 }: {
   selectedToken: TokenSymbol;
   onTokenChange: (token: TokenSymbol) => void;
   onNavigate: (page: PageId) => void;
+  displayName: string;
 }) {
   const [currency, setCurrency] = useState("INR");
   const quickActions: { page: PageId; label: string; icon: "send" | "receive" | "merchant" | "more"; helper: string }[] = [
@@ -24,9 +34,8 @@ export default function Dashboard({
 
   return (
     <div className="page-stack dashboard-page">
-      <div className="page-intro">
-        <div><div className="section-kicker">SUBTLE PAY</div><h1>Your wallet</h1><p>Assets, payments and account controls.</p></div>
-        <button className="icon-button notification-button" type="button" aria-label="Open account settings" onClick={() => onNavigate("more")}><Icon name="bell" size={19} /></button>
+      <div className="page-intro wallet-greeting-intro">
+        <h1 className="wallet-greeting">{walletGreeting(displayName)}</h1>
       </div>
 
 
