@@ -17,7 +17,7 @@ export interface TokenAsset {
   image: string | null;
   price: number | null;
   pct24: number | null;
-  chartPoolAddress: string | null;
+  coinId: string;
   amount: number | null;
   value: number | null;
 }
@@ -35,70 +35,57 @@ export interface TokenAssetsWidgetProps {
   onSelect?: (asset: TokenAsset) => void;
 }
 
-type TokenResource = {
+type CoinStatsCoin = {
   id: string;
-  type: string;
-  attributes?: {
-    address?: string;
-    name?: string;
-    symbol?: string;
-    image_url?: string | null;
-  };
+  name?: string;
+  symbol?: string;
+  icon?: string | null;
+  price?: number | null;
+  priceChange1d?: number | null;
+  contractAddress?: string | null;
+  contractAddresses?: Array<{ blockchain?: string; address?: string; contractAddress?: string }>;
 };
 
-type PoolResource = {
-  id: string;
-  attributes?: {
-    address?: string;
-    base_token_price_usd?: string | number;
-    quote_token_price_usd?: string | number;
-    price_change_percentage?: { h24?: string | number };
-  };
-  relationships?: {
-    base_token?: { data?: { id?: string } };
-    quote_token?: { data?: { id?: string } };
-  };
+type CoinStatsCoinsResponse = {
+  meta?: { page?: number; limit?: number; pageCount?: number; hasNextPage?: boolean };
+  result?: CoinStatsCoin[];
 };
-
-type PoolsResponse = { data?: PoolResource[]; included?: TokenResource[] };
 
 type NetworkToken = {
   id: string;
+  coinId: string;
   address: string;
   symbol: string;
   name: string;
   image: string | null;
   price: number | null;
   pct24: number | null;
-  chartPoolAddress: string | null;
 };
 
-type OHLCVResponse = {
-  data?: { attributes?: { ohlcv_list?: [number, number, number, number, number, number][] } };
-};
+type CoinStatsChartResponse = number[][] | { result?: number[][] };
 
 type Point = [number, number];
 
-const NETWORK = "monad";
+const MONAD_BLOCKCHAIN = "monad";
 const TIMEFRAMES: Timeframe[] = ["1D", "1W", "1M", "3M", "1Y", "All"];
-const CHART_CONFIG: Record<Timeframe, { interval: "minute" | "hour" | "day"; aggregate: number; limit: number; chunks: number }> = {
-  "1D": { interval: "minute", aggregate: 15, limit: 96, chunks: 1 },
-  "1W": { interval: "hour", aggregate: 4, limit: 42, chunks: 1 },
-  "1M": { interval: "hour", aggregate: 12, limit: 60, chunks: 1 },
-  "3M": { interval: "day", aggregate: 1, limit: 90, chunks: 1 },
-  "1Y": { interval: "day", aggregate: 1, limit: 180, chunks: 2 },
-  All: { interval: "day", aggregate: 1, limit: 180, chunks: 2 },
+const COINSTATS_PERIOD: Record<Timeframe, string> = {
+  "1D": "24h",
+  "1W": "1w",
+  "1M": "1m",
+  "3M": "3m",
+  "1Y": "1y",
+  All: "all",
 };
 
 const NATIVE_FALLBACK: NetworkToken = {
-  id: "native-mon",
+  id: "monad",
+  coinId: "monad",
   address: "",
   symbol: "MON",
   name: "Monad",
   image: null,
   price: null,
   pct24: null,
-  chartPoolAddress: null,
 };
 
 class ApiError extends Error {
@@ -134,122 +121,68 @@ async function getJSON<T>(url: string, headers: Record<string, string>, signal?:
   return response.json() as Promise<T>;
 }
 
-function uniqueTokens(response: PoolsResponse): NetworkToken[] {
-  const resources = response.included ?? [];
-  const byId = new Map(resources.filter((r) => r.type === "token" && r.attributes?.address).map((r) => [r.id, r]));
-  const metadataById = new Map<string, { poolAddress: string | null; price: number | null; pct24: number | null }>();
-  const orderedIds: string[] = [];
-
-  for (const pool of response.data ?? []) {
-    const poolAddress = pool.attributes?.address
-      || pool.id.slice(pool.id.indexOf("_") + 1)
-      || null;
-    const pct = pool.attributes?.price_change_percentage?.h24;
-    const pctNumber = pct == null ? null : Number(pct);
-    const pct24 = pctNumber != null && Number.isFinite(pctNumber) ? pctNumber : null;
-    const relations = [
-      {
-        id: pool.relationships?.base_token?.data?.id,
-        price: pool.attributes?.base_token_price_usd,
-        pct24,
-      },
-      {
-        id: pool.relationships?.quote_token?.data?.id,
-        price: pool.attributes?.quote_token_price_usd,
-        // A pair's percent change describes the base token; don't mislabel it as the quote token's return.
-        pct24: null,
-      },
-    ];
-    for (const relation of relations) {
-      if (!relation.id) continue;
-      orderedIds.push(relation.id);
-      if (metadataById.has(relation.id)) continue;
-      const priceNumber = relation.price == null ? null : Number(relation.price);
-      metadataById.set(relation.id, {
-        poolAddress: poolAddress || null,
-        price: priceNumber != null && Number.isFinite(priceNumber) ? priceNumber : null,
-        pct24: relation.pct24,
-      });
-    }
-  }
-
-  const seen = new Set<string>();
-  const tokens: NetworkToken[] = [];
-  for (const id of [...orderedIds, ...byId.keys()]) {
-    const resource = byId.get(id);
-    const address = resource?.attributes?.address?.trim();
-    if (!resource || !address) continue;
-    const key = address.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const symbol = resource.attributes?.symbol?.trim() || "TOKEN";
-    const market = metadataById.get(id);
-    tokens.push({
-      id: key,
-      address,
-      symbol: symbol.toUpperCase(),
-      name: resource.attributes?.name?.trim() || symbol.toUpperCase(),
-      image: resource.attributes?.image_url || null,
-      price: market?.price ?? null,
-      pct24: market?.pct24 ?? null,
-      chartPoolAddress: market?.poolAddress ?? null,
+async function fetchMonadTokens(
+  baseUrl: string,
+  headers: Record<string, string>,
+  signal: AbortSignal,
+  currency: string,
+): Promise<NetworkToken[]> {
+  const params = new URLSearchParams({
+    blockchains: MONAD_BLOCKCHAIN,
+    currency: currency.toUpperCase(),
+    page: "1",
+    limit: "100",
+    sortBy: "marketCap",
+    sortDir: "desc",
+  });
+  const response = await getJSON<CoinStatsCoinsResponse>(`${baseUrl}/coins?${params.toString()}`, headers, signal);
+  const coins = response.result ?? [];
+  const tokens = coins
+    .filter((coin) => Boolean(coin.id && (coin.symbol || coin.name)))
+    .map((coin): NetworkToken => {
+      const monadContract = coin.contractAddresses?.find((item) => (item.blockchain || "").toLowerCase() === MONAD_BLOCKCHAIN);
+      const address = monadContract?.address || monadContract?.contractAddress || coin.contractAddress || "";
+      const price = coin.price == null ? null : Number(coin.price);
+      const change = coin.priceChange1d == null ? null : Number(coin.priceChange1d);
+      return {
+        id: coin.id,
+        coinId: coin.id,
+        address,
+        symbol: (coin.symbol || "TOKEN").toUpperCase(),
+        name: coin.name || coin.symbol || coin.id,
+        image: coin.icon || null,
+        price: price != null && Number.isFinite(price) ? price : null,
+        pct24: change != null && Number.isFinite(change) ? change : null,
+      };
     });
+  if (!tokens.length) {
+    throw new ApiError(404, "CoinStats returned no listed assets for the Monad blockchain filter.");
   }
-  return tokens;
-}
-
-async function fetchMonadTokens(baseUrl: string, headers: Record<string, string>, signal: AbortSignal) {
-  // Three pages gives a broader token catalogue without crawling an unbounded on-chain universe.
-  const pages = await Promise.all([1, 2, 3].map((page) =>
-    getJSON<PoolsResponse>(
-      `${baseUrl}/onchain/networks/${NETWORK}/trending_pools?include=base_token,quote_token&page=${page}&duration=24h`,
-      headers,
-      signal,
-    ),
-  ));
-  const response: PoolsResponse = {
-    data: pages.flatMap((page) => page.data ?? []),
-    included: pages.flatMap((page) => page.included ?? []),
-  };
-  const tokens = uniqueTokens(response);
-  if (!tokens.length) throw new ApiError(404, "No token metadata was returned for Monad's trending pools.");
   return tokens;
 }
 
 async function fetchChart(
   baseUrl: string,
   headers: Record<string, string>,
-  poolAddress: string,
-  tokenAddress: string,
+  coinId: string,
   timeframe: Timeframe,
+  currency: string,
   signal: AbortSignal,
 ): Promise<Point[]> {
-  const config = CHART_CONFIG[timeframe];
-  const readChunk = async (before?: number) => {
-    const params = new URLSearchParams({
-      aggregate: String(config.aggregate),
-      limit: String(config.limit),
-      currency: "usd",
-      token: tokenAddress,
-    });
-    if (before) params.set("before_timestamp", String(before));
-    const url = `${baseUrl}/onchain/networks/${NETWORK}/pools/${encodeURIComponent(poolAddress)}/ohlcv/${config.interval}?${params.toString()}`;
-    const response = await getJSON<OHLCVResponse>(url, headers, signal);
-    return (response.data?.attributes?.ohlcv_list ?? [])
-      .filter((row) => Number.isFinite(row[0]) && Number.isFinite(row[4]))
-      .map((row): Point => [row[0] * 1000, row[4]])
-      .sort((a, b) => a[0] - b[0]);
-  };
-
-  let points = await readChunk();
-  const maxChunks = config.chunks;
-  for (let chunk = 1; chunk < maxChunks && points.length > 1; chunk++) {
-    const oldest = Math.floor(points[0][0] / 1000) - 1;
-    const older = await readChunk(oldest);
-    if (!older.length) break;
-    points = [...older, ...points].filter((point, index, all) => index === 0 || point[0] !== all[index - 1][0]);
-  }
-  return points;
+  const params = new URLSearchParams({
+    period: COINSTATS_PERIOD[timeframe],
+    currency: currency.toUpperCase(),
+  });
+  const response = await getJSON<CoinStatsChartResponse>(
+    `${baseUrl}/coins/${encodeURIComponent(coinId)}/charts?${params.toString()}`,
+    headers,
+    signal,
+  );
+  const rows = Array.isArray(response) ? response : response.result ?? [];
+  return rows
+    .filter((row) => Array.isArray(row) && row.length >= 2 && Number.isFinite(row[0]) && Number.isFinite(row[1]))
+    .map((row): Point => [row[0] > 1e12 ? row[0] : row[0] * 1000, row[1]])
+    .sort((a, b) => a[0] - b[0]);
 }
 
 function money(value: number | null, currency: string, valueKind: "price" | "value" = "price") {
@@ -398,9 +331,9 @@ function PriceChart({
 
 export default function TokenAssetsWidget({
   apiKey = "",
-  baseUrl = "https://api.coingecko.com/api/v3",
-  keyHeader = "x-cg-demo-api-key",
-  currency = "usd",
+  baseUrl = "https://openapiv1.coinstats.app",
+  keyHeader = "X-API-KEY",
+  currency = "USD",
   refreshMs = 300000,
   defaultTimeframe = "1D",
   visibleTokens = 3,
@@ -415,12 +348,12 @@ export default function TokenAssetsWidget({
   const [hover, setHover] = useState<number | null>(null);
   const [tokens, setTokens] = useState<NetworkToken[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(apiKey.trim() ? "loading" : "error");
-  const [error, setError] = useState<string | null>(apiKey.trim() ? null : "Add VITE_COINGECKO_API_KEY to .env.local to load live Monad market data.");
+  const [error, setError] = useState<string | null>(apiKey.trim() ? null : "Add VITE_COINSTATS_API_KEY to .env.local to load live Monad market data.");
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [reload, setReload] = useState(0);
   const [chartPulse, setChartPulse] = useState(0);
   const [chartLoading, setChartLoading] = useState(false);
-  const [chartError, setChartError] = useState<string | null>(apiKey.trim() ? "Waiting for live chart data." : "Add your CoinGecko API key to load the Monad chart.");
+  const [chartError, setChartError] = useState<string | null>(apiKey.trim() ? "Waiting for live chart data." : "Add your CoinStats API key to load the Monad chart.");
   const [charts, setCharts] = useState<Record<string, Point[]>>({});
   const fetchedAt = useRef<Record<string, number>>({});
   const requestsInFlight = useRef<Set<string>>(new Set());
@@ -452,7 +385,7 @@ export default function TokenAssetsWidget({
 
   const selected = assets.find((asset) => asset.id === selectedId) ?? assets[0] ?? null;
   const selectedPrice = selected?.price ?? null;
-  const chartKey = selected?.address ? `${selected.id}:${timeframe}` : "";
+  const chartKey = selected?.coinId ? `${selected.coinId}:${timeframe}` : "";
   const chartPoints = chartKey ? charts[chartKey] ?? [] : [];
   const hoveredPoint = hover != null ? chartPoints[hover] : null;
   const shownPrice = hoveredPoint?.[1] ?? chartPoints[chartPoints.length - 1]?.[1] ?? selectedPrice;
@@ -470,15 +403,15 @@ export default function TokenAssetsWidget({
   useEffect(() => {
     if (!apiKey.trim()) {
       setStatus("error");
-      setError("Add VITE_COINGECKO_API_KEY to .env.local to load live Monad market data.");
-      setChartError("Add your CoinGecko API key to load the Monad chart.");
+      setError("Add VITE_COINSTATS_API_KEY to .env.local to load live Monad market data.");
+      setChartError("Add your CoinStats API key to load the Monad chart.");
       return;
     }
     const controller = new AbortController();
     const load = async () => {
       setStatus((current) => current === "ready" ? "ready" : "loading");
       try {
-        const discovered = await fetchMonadTokens(baseUrl, headers, controller.signal);
+        const discovered = await fetchMonadTokens(baseUrl, headers, controller.signal, currency);
         if (controller.signal.aborted) return;
         setTokens(discovered);
         setStatus("ready");
@@ -501,11 +434,11 @@ export default function TokenAssetsWidget({
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [apiKey, baseUrl, headers, refreshMs, reload]);
+  }, [apiKey, baseUrl, headers, refreshMs, reload, currency]);
 
   const loadChart = useCallback(async (asset: TokenAsset, tf: Timeframe) => {
-    if (!asset.address || !asset.chartPoolAddress) {
-      setChartError("Live chart history for this coin is not available from the current Monad pool feed.");
+    if (!asset.coinId) {
+      setChartError("CoinStats does not provide a chart ID for this asset.");
       setChartLoading(false);
       return;
     }
@@ -516,7 +449,7 @@ export default function TokenAssetsWidget({
     setChartLoading(true);
     setChartError(null);
     try {
-      const points = await fetchChart(baseUrl, headers, asset.chartPoolAddress, asset.address, tf, new AbortController().signal);
+      const points = await fetchChart(baseUrl, headers, asset.coinId, tf, currency, new AbortController().signal);
       if (!points.length) throw new ApiError(404, "No chart history is available for this token yet.");
       fetchedAt.current[key] = Date.now();
       setCharts((current) => ({ ...current, [key]: points }));
@@ -526,7 +459,7 @@ export default function TokenAssetsWidget({
       requestsInFlight.current.delete(key);
       setChartLoading(false);
     }
-  }, [baseUrl, headers]);
+  }, [baseUrl, headers, currency]);
 
   useEffect(() => {
     setHover(null);
@@ -535,16 +468,16 @@ export default function TokenAssetsWidget({
       return;
     }
     if (!apiKey.trim()) {
-      setChartError("Add your CoinGecko API key to load the Monad chart.");
+      setChartError("Add your CoinStats API key to load the Monad chart.");
       return;
     }
     void loadChart(selected, timeframe);
-  }, [selected?.id, selected?.address, selected?.chartPoolAddress, timeframe, apiKey, loadChart]);
+  }, [selected?.id, selected?.address, selected?.coinId, timeframe, apiKey, loadChart]);
 
   useEffect(() => {
     if (chartPulse === 0 || !selected || !apiKey.trim()) return;
     void loadChart(selected, timeframe);
-  }, [chartPulse, selected?.id, selected?.address, selected?.chartPoolAddress, timeframe, apiKey, loadChart]);
+  }, [chartPulse, selected?.id, selected?.address, selected?.coinId, timeframe, apiKey, loadChart]);
 
   const choose = (asset: TokenAsset) => {
     setSelectedId(asset.id);
@@ -611,11 +544,11 @@ export default function TokenAssetsWidget({
       </div>
 
       <div className="ta-list-head">
-        <span>Monad tokens <i className="ta-q" title="Tokens discovered through Monad on-chain DEX pools">?</i></span>
+        <span>Monad tokens <i className="ta-q" title="CoinStats assets matched to the Monad blockchain filter">?</i></span>
         <b>{holdings.length ? money(total, currency, "value") : "Balances unavailable"}</b>
       </div>
 
-      <div className="ta-list" role="listbox" aria-label="Monad tokens, regardless of wallet balance">
+      <div className="ta-list" role="listbox" aria-label="CoinStats Monad assets, regardless of wallet balance">
         {status === "loading" && tokens.length === 0 && [0, 1, 2].map((i) => (
           <div className="ta-row ta-row-skel" key={i}>
             <div className="ta-skel" style={{ width: 40, height: 40, borderRadius: "50%" }} />
@@ -654,8 +587,8 @@ export default function TokenAssetsWidget({
       )}
 
       <footer className="ta-foot">
-        <span className={`ta-live ${status === "ready" && !stale ? "" : "off"}`}><i />{status === "ready" ? "Monad DEX prices" : status === "loading" ? "Connecting to Monad" : "Live data unavailable"}{updatedAt ? ` · ${updatedLabel}` : ""}</span>
-        <small>Market data is sourced from Monad pools. Wallet balances require a connected wallet service.</small>
+        <span className={`ta-live ${status === "ready" && !stale ? "" : "off"}`}><i />{status === "ready" ? "CoinStats · Monad" : status === "loading" ? "Connecting to CoinStats" : "Live data unavailable"}{updatedAt ? ` · ${updatedLabel}` : ""}</span>
+        <small>Market data is sourced from CoinStats. Wallet balances require a connected wallet service.</small>
       </footer>
     </section>
   );
