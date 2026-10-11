@@ -39,80 +39,91 @@ body {
   background: #ffffff;
 }
 
-.black-card {
+.card-frame {
   position: absolute;
   top: 13svh;
   left: 4%;
   width: 92%;
   aspect-ratio: 320 / 201;
+  padding: 3px;
   isolation: isolate;
-  overflow: hidden;
-  border: 1px solid rgba(157, 187, 255, 0.24);
-  border-radius: 12px;
-  background:
-    radial-gradient(
-      ellipse 63% 84% at 50% 50%,
-      #000000 0%,
-      #000000 38%,
-      rgba(0, 1, 5, 0.98) 44%,
-      rgba(3, 7, 17, 0.94) 50%,
-      rgba(8, 19, 43, 0.84) 57%,
-      rgba(18, 40, 83, 0.9) 64%,
-      rgba(39, 76, 145, 0.96) 70%,
-      rgba(22, 45, 91, 0.84) 77%,
-      rgba(4, 10, 23, 0.98) 91%,
-      #02040a 100%
-    );
+  overflow: visible;
+  border-radius: 14px;
+  background: linear-gradient(
+    128deg,
+    #7198ee 0%,
+    #3159a8 10%,
+    #142954 22%,
+    #4776d5 39%,
+    #244786 53%,
+    #102047 68%,
+    #4d78d0 82%,
+    #8aabf6 92%,
+    #31559d 100%
+  );
   box-shadow:
-    0 0 26px 2px rgba(37, 82, 177, 0.3),
-    0 0 56px rgba(26, 66, 150, 0.19),
-    inset 0 0 26px rgba(73, 117, 208, 0.16),
-    inset 0 0 0 1px rgba(202, 219, 255, 0.08);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+    0 0 3px 1px rgba(113, 157, 255, 0.82),
+    0 0 12px 2px rgba(72, 119, 220, 0.72),
+    0 0 28px 3px rgba(52, 93, 181, 0.46),
+    0 0 48px rgba(33, 72, 157, 0.22),
+    inset 0 0 5px rgba(216, 230, 255, 0.45);
 }
 
-.black-card::before {
+.glass-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(194, 215, 255, 0.2);
+  border-radius: 11px;
+  background:
+    radial-gradient(ellipse at 0% 50%, rgba(45, 82, 155, 0.2) 0%, transparent 39%),
+    radial-gradient(ellipse at 100% 50%, rgba(61, 105, 194, 0.22) 0%, transparent 39%),
+    radial-gradient(ellipse at 50% 0%, rgba(45, 80, 151, 0.21) 0%, transparent 43%),
+    radial-gradient(ellipse at 50% 100%, rgba(52, 91, 169, 0.2) 0%, transparent 43%),
+    linear-gradient(135deg, rgba(8, 17, 37, 0.78), rgba(0, 2, 8, 0.61) 46%, rgba(7, 15, 32, 0.75));
+  box-shadow:
+    inset 0 0 0 1px rgba(224, 235, 255, 0.035),
+    inset 0 0 24px rgba(62, 104, 194, 0.13);
+  backdrop-filter: blur(26px) saturate(175%);
+  -webkit-backdrop-filter: blur(26px) saturate(175%);
+}
+
+.glass-card::before {
   position: absolute;
-  z-index: -1;
-  inset: -9%;
+  inset: 0;
   border-radius: inherit;
-  background: radial-gradient(
-    ellipse 62% 82% at 50% 50%,
-    transparent 45%,
-    rgba(34, 71, 153, 0.08) 52%,
-    rgba(48, 91, 177, 0.55) 60%,
-    rgba(82, 130, 228, 0.88) 66%,
-    rgba(48, 87, 166, 0.58) 73%,
-    rgba(10, 24, 54, 0.2) 81%,
-    transparent 89%
-  );
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.13), transparent 17%),
+    linear-gradient(90deg, rgba(133, 170, 255, 0.11), transparent 12%, transparent 88%, rgba(103, 148, 255, 0.12));
   content: "";
-  filter: blur(13px);
   pointer-events: none;
 }
 
-.black-card::after {
+.glass-card::after {
   position: absolute;
-  inset: 0;
-  border: 1px solid rgba(173, 198, 255, 0.13);
-  border-radius: inherit;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.055) 0%,
-    rgba(255, 255, 255, 0.012) 20%,
-    transparent 43%,
-    rgba(38, 76, 155, 0.045) 100%
-  );
+  inset: 1px;
+  border: 1px solid rgba(185, 207, 255, 0.08);
+  border-radius: 10px;
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.1),
-    inset 0 0 20px rgba(66, 112, 211, 0.11);
+    inset 1px 0 12px rgba(83, 127, 220, 0.08),
+    inset -1px 0 12px rgba(83, 127, 220, 0.08);
   content: "";
   pointer-events: none;
 }
 
 @media (min-width: 600px) {
-  .black-card {
-    border-radius: 15px;
+  .card-frame {
+    border-radius: 17px;
+  }
+
+  .glass-card {
+    border-radius: 14px;
+  }
+
+  .glass-card::after {
+    border-radius: 13px;
   }
 }
