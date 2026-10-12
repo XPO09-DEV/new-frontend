@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import AccountGate from "./components/AccountGate";
-import { logoutAccount, restoreAccountSession, updateAccountProfile, type AccountProfile } from "./services/accountService";
+import { getAccountHome, logoutAccount, restoreAccountSession, updateAccountProfile, type AccountProfile } from "./services/accountService";
 import BottomNav, { type PageId } from "./components/BottomNav";
 import Icon from "./components/Icon";
 import WalletCard from "./components/WalletCard";
@@ -14,6 +14,40 @@ import Send from "./pages/Send";
 import { type WalletAsset, copyText, fetchWalletAssets, getChainLabel } from "./services/walletService";
 
 type WalletStatus = "disconnected" | "connecting" | "loading" | "ready" | "error";
+
+/** Merge the authenticated Monad Testnet balance with optional indexed public-chain holdings. */
+async function fetchAccountWalletAssets(address: string, force = false): Promise<WalletAsset[]> {
+  const home = await getAccountHome();
+  if (home.address.toLowerCase() !== address.toLowerCase()) {
+    throw new Error("The authenticated account wallet did not match the requested address. Refresh your session.");
+  }
+  let indexed: WalletAsset[] = [];
+  try {
+    indexed = await fetchWalletAssets(address, force);
+  } catch {
+    // The verified Monad Testnet balance must remain usable even if the optional indexer is down.
+  }
+  const native: WalletAsset = {
+    id: "monad-testnet:native:mon",
+    blockchain: "monad-testnet",
+    chainLabel: "Monad Testnet",
+    tokenName: "Monad Testnet MON",
+    tokenSymbol: "MON",
+    balance: Number(home.balanceToken) || 0,
+    balanceUsd: Number(home.balanceUsd),
+    priceUsd: home.rates?.tokenUsd ?? null,
+    tokenDecimals: 18,
+    contractAddress: null,
+    thumbnail: null,
+    tokenType: "native",
+  };
+  const withoutDuplicateTestnetMon = indexed.filter((asset) =>
+    !(asset.tokenSymbol.toUpperCase() === "MON" &&
+      (asset.blockchain.toLowerCase().includes("monad-testnet") || asset.chainLabel.toLowerCase().includes("monad testnet")) &&
+      !asset.contractAddress)
+  );
+  return [native, ...withoutDuplicateTestnetMon];
+}
 
 function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
@@ -83,7 +117,7 @@ export default function App() {
     setWalletStatus((current) => current === "disconnected" ? "loading" : current);
     setWalletError(null);
     try {
-      const assets = await fetchWalletAssets(address, force);
+      const assets = await fetchAccountWalletAssets(address, force);
       setWalletAssets(assets);
       setWalletStatus("ready");
       setSelectedToken((current) => assets.some((asset) => asset.id === current) ? current : assets[0]?.id ?? "");
@@ -145,7 +179,7 @@ export default function App() {
     let alive = true;
     const load = async (force = false) => {
       try {
-        const assets = await fetchWalletAssets(walletAddress, force);
+        const assets = await fetchAccountWalletAssets(walletAddress, force);
         if (!alive) return;
         setWalletAssets(assets);
         setWalletStatus("ready");
