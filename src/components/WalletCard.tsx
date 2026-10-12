@@ -41,7 +41,7 @@ export default function WalletCard({
   const busy = walletStatus === "connecting" || walletStatus === "loading";
 
   return (
-    <section className={`glass-card wallet-card ${isOpening ? "wallet-card-opening" : ""}`} aria-label="Wallet summary">
+    <section className={`glass-card wallet-card ${isOpening ? "wallet-card-opening" : ""} ${walletAddress ? "" : "wallet-card-disconnected"}`} aria-label="Wallet summary">
       <div className="wallet-card-top">
         <span className="card-brand">Subtle Pay</span>
         {token && (
