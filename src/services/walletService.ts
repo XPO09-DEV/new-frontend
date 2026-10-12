@@ -193,7 +193,7 @@ function normalizeBackendAsset(value: unknown): WalletAsset | null {
       tokenName: item.tokenName,
       tokenSymbol: item.tokenSymbol.toUpperCase(),
       balance,
-      balanceRawInteger: typeof item.balanceRawInteger === "string" && /^\\d+$/.test(item.balanceRawInteger) ? item.balanceRawInteger : undefined,
+      balanceRawInteger: typeof item.balanceRawInteger === "string" && /^[0-9]+$/.test(item.balanceRawInteger) ? item.balanceRawInteger : undefined,
       balanceUsd: finiteNumber(item.balanceUsd),
       priceUsd: finiteNumber(item.priceUsd),
       tokenDecimals: Math.max(0, Math.min(36, Math.trunc(finiteNumber(item.tokenDecimals) ?? 18))),
