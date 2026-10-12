@@ -314,7 +314,11 @@ export function isSameNetwork(sourceChainId: string | null | undefined, destinat
 
 
 export function getWalletAssetNetwork(asset: WalletAsset) {
-  return SUPPORTED_EVM_NETWORKS.find((network) => network.ankrName === asset.blockchain);
+  const blockchain = asset.blockchain.toLowerCase();
+  return SUPPORTED_EVM_NETWORKS.find((network) =>
+    network.ankrName === blockchain || network.id === blockchain
+      || (network.id === "bnb" && ["binance-smart-chain", "binance-smart-chain-mainnet"].includes(blockchain))
+  ) ?? null;
 }
 
 function amountToBaseUnits(value: string, decimals: number): bigint {
@@ -384,6 +388,24 @@ export async function sendEvmAssetTransaction(request: SendTransactionRequest): 
     if (typeof switchedChain !== "string" || switchedChain.toLowerCase() !== network.chainId) {
       throw new Error(`Your wallet is not on ${network.label}. No transaction was sent.`);
     }
+  }
+
+  if (asset.contractAddress) {
+    if (!isValidEvmAddress(asset.contractAddress)) {
+      throw new Error("The token contract address is invalid. No transaction was sent.");
+    }
+    const balanceOfData = `0x70a08231${walletAddress.slice(2).toLowerCase().padStart(64, "0")}`;
+    const onChainBalance = await provider.request({
+      method: "eth_call",
+      params: [{ to: asset.contractAddress, data: balanceOfData }, "latest"],
+    });
+    if (typeof onChainBalance !== "string" || !/^0x[a-fA-F0-9]+$/.test(onChainBalance)) {
+      throw new Error("The wallet could not verify the token balance on-chain. No transaction was sent.");
+    }
+    let freshRawBalance: bigint;
+    try { freshRawBalance = BigInt(onChainBalance); }
+    catch { throw new Error("The token returned an invalid on-chain balance. No transaction was sent."); }
+    if (units > freshRawBalance) throw new Error("The current on-chain token balance is lower than the indexed balance. Refresh and try again.");
   }
 
   const tx: Record<string, string> = { from: walletAddress, to: asset.contractAddress ?? recipient };
