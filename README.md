@@ -17,7 +17,7 @@ The backend should also be running on `http://127.0.0.1:4000`. The frontend call
 
 Ankr and CoinStats credentials belong in the backend's untracked `.env` file or hosting secret manager under `ANKR_API_KEY` and `COINSTATS_API_KEY`. Never put them in frontend `VITE_*` variables: those values are visible in the browser bundle.
 
-Copy `.env.example` to `.env.local` for local frontend configuration. Set `VITE_SUBTLEPAY_API_BASE_URL=http://127.0.0.1:4000` for local development; in production, use the deployed API origin or leave blank when frontend and backend are reverse-proxied under the same origin. API secrets must never be committed.
+Copy `.env.example` to `.env.local` for local frontend configuration. Set `VITE_SUBTLEPAY_API_BASE_URL=http://localhost:4000` for local development (when Vite is opened at `http://localhost:5173`); in production, use the deployed API origin or leave blank when frontend and backend are reverse-proxied under the same origin. API secrets must never be committed.
 
 ## Wallet and payment safety
 
