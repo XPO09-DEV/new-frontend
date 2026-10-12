@@ -464,3 +464,5 @@
 .ta-hero-empty .ta-hero-search-link { border-color:transparent; background:transparent; color:var(--ta-blue); }
 
 .ta-contract-address { display:block; margin-top:3px; overflow:hidden; color:#9aa3b2; font:450 8px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; text-overflow:ellipsis; white-space:nowrap; }
+
+.ta-assets-safety-note { margin:8px 2px 4px; color:#9099a9; font:450 9px/1.5 "Inter",sans-serif; }
