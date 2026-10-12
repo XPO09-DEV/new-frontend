@@ -194,7 +194,21 @@ interface MarketInfo {
   pct24: number | null;
 }
 
+type SearchNetworkId = "bitcoin" | "ethereum" | "bnb" | "solana" | "monad";
+type SearchNetworkFilter = "all" | SearchNetworkId;
+
 interface SearchCoin {
+  id: string;
+  symbol: string;
+  name: string;
+  thumb?: string;
+  resultKey: string;
+  networkId: SearchNetworkId;
+  networkLabel: string;
+  contractAddress?: string;
+  assetKind: "Native coin" | "Token";
+}
+interface RawSearchCoin {
   id: string;
   symbol: string;
   name: string;
@@ -204,10 +218,27 @@ interface SearchCoinDetails {
   asset_platform_id?: string | null;
   platforms?: Record<string, string>;
 }
-const MONAD_SEARCH_CACHE = new Map<string, SearchCoin[]>();
-const MONAD_PLATFORM_CACHE = new Map<string, boolean>();
-const MAX_MONAD_SEARCH_RESULTS = 5;
-const MAX_MONAD_SEARCH_CANDIDATES = 8;
+
+const SEARCH_NETWORKS: { id: SearchNetworkId; label: string; platformAliases: string[]; nativeCoinIds: string[] }[] = [
+  { id: "bitcoin", label: "Bitcoin", platformAliases: [], nativeCoinIds: ["bitcoin"] },
+  { id: "ethereum", label: "Ethereum", platformAliases: ["ethereum"], nativeCoinIds: ["ethereum"] },
+  { id: "bnb", label: "BNB Chain", platformAliases: ["binance-smart-chain", "bnb-smart-chain", "bnb-chain"], nativeCoinIds: ["binancecoin"] },
+  { id: "solana", label: "Solana", platformAliases: ["solana"], nativeCoinIds: ["solana"] },
+  { id: "monad", label: "Monad", platformAliases: ["monad", "monad-mainnet"], nativeCoinIds: ["monad"] },
+];
+const SEARCH_NETWORK_FILTERS: { id: SearchNetworkFilter; label: string }[] = [
+  { id: "all", label: "All networks" },
+  { id: "bitcoin", label: "Bitcoin" },
+  { id: "ethereum", label: "Ethereum" },
+  { id: "bnb", label: "BNB Chain" },
+  { id: "solana", label: "Solana" },
+  { id: "monad", label: "Monad" },
+];
+const MULTICHAIN_SEARCH_CACHE = new Map<string, SearchCoin[]>();
+const SEARCH_DETAILS_CACHE = new Map<string, SearchCoinDetails>();
+const MAX_MULTICHAIN_SEARCH_CANDIDATES = 14;
+const MAX_MULTICHAIN_DETAILS_REQUESTS = 10;
+const MAX_MULTICHAIN_SEARCH_RESULTS = 36;
 
 async function fetchMarkets(
   base: string,
@@ -237,38 +268,89 @@ async function fetchMarkets(
   return out;
 }
 
-async function searchMonadTokens(base: string, headers: Record<string, string>, query: string, signal: AbortSignal): Promise<SearchCoin[]> {
-  const cacheKey = `${base}|${query.trim().toLowerCase()}`;
-  const cached = MONAD_SEARCH_CACHE.get(cacheKey);
+async function searchMultichainAssets(base: string, headers: Record<string, string>, query: string, signal: AbortSignal): Promise<SearchCoin[]> {
+  const normalizedQuery = query.trim().toLowerCase();
+  const cacheKey = `${base}|${normalizedQuery}`;
+  const cached = MULTICHAIN_SEARCH_CACHE.get(cacheKey);
   if (cached) return cached;
-  const payload = await getJSON<{ coins: SearchCoin[] }>(`${base}/search?query=${encodeURIComponent(query.trim())}`, headers, signal);
-  const candidates = (payload.coins ?? []).slice(0, MAX_MONAD_SEARCH_CANDIDATES);
-  const verified = await Promise.all(candidates.map(async (coin): Promise<SearchCoin | null> => {
-    // CoinGecko lists the native MON asset without a contract platform.
-    if (coin.id.toLowerCase() === "monad") return coin;
-    const known = MONAD_PLATFORM_CACHE.get(coin.id);
-    if (known === true) return coin;
-    if (known === false) return null;
+
+  const payload = await getJSON<{ coins: RawSearchCoin[] }>(
+    `${base}/search?query=${encodeURIComponent(query.trim())}`, headers, signal,
+  );
+  const candidates = (payload.coins ?? []).slice(0, MAX_MULTICHAIN_SEARCH_CANDIDATES);
+  const results: SearchCoin[] = [];
+  const seen = new Set<string>();
+
+  const addResult = (coin: RawSearchCoin, network: typeof SEARCH_NETWORKS[number], assetKind: SearchCoin["assetKind"], contractAddress?: string) => {
+    const normalizedAddress = contractAddress?.trim();
+    const identity = `${coin.id}|${network.id}|${normalizedAddress?.toLowerCase() ?? "native"}`;
+    if (seen.has(identity)) return;
+    seen.add(identity);
+    results.push({
+      id: coin.id,
+      symbol: coin.symbol,
+      name: coin.name,
+      thumb: coin.thumb,
+      resultKey: identity,
+      networkId: network.id,
+      networkLabel: network.label,
+      assetKind,
+      ...(normalizedAddress ? { contractAddress: normalizedAddress } : {}),
+    });
+  };
+
+  // Native coins do not need token contract addresses.
+  for (const coin of candidates) {
+    const nativeNetwork = SEARCH_NETWORKS.find((network) => network.nativeCoinIds.includes(coin.id.toLowerCase()));
+    if (nativeNetwork) addResult(coin, nativeNetwork, "Native coin");
+  }
+
+  // A token appears on a network only when the market index lists a real deployment address.
+  const tokenCandidates = candidates.filter((coin) => !SEARCH_NETWORKS.some((network) => network.nativeCoinIds.includes(coin.id.toLowerCase())));
+  const matchedTokens = tokenCandidates.filter((coin) =>
+    coin.name.toLowerCase().includes(normalizedQuery) || coin.symbol.toLowerCase().includes(normalizedQuery)
+  );
+  const detailCandidates = (matchedTokens.length ? matchedTokens : tokenCandidates).slice(0, MAX_MULTICHAIN_DETAILS_REQUESTS);
+  const detailsRows = await Promise.all(detailCandidates.map(async (coin): Promise<{ coin: RawSearchCoin; details: SearchCoinDetails | null }> => {
+    const cachedDetails = SEARCH_DETAILS_CACHE.get(coin.id);
+    if (cachedDetails) return { coin, details: cachedDetails };
     try {
       const details = await getJSON<SearchCoinDetails>(
         `${base}/coins/${encodeURIComponent(coin.id)}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false&sparkline=false`,
-        headers, signal,
+        headers,
+        signal,
       );
-      const platforms = [details.asset_platform_id ?? "", ...Object.keys(details.platforms ?? {})].map((p) => p.toLowerCase());
-      const isMonad = platforms.some((p) => p.includes("monad"));
-      MONAD_PLATFORM_CACHE.set(coin.id, isMonad);
-      return isMonad ? coin : null;
-    } catch (e) {
-      if (signal.aborted) throw e;
-      if (e instanceof HttpError && (e.status === 429 || e.status >= 500)) throw e;
-      MONAD_PLATFORM_CACHE.set(coin.id, false);
-      return null;
+      SEARCH_DETAILS_CACHE.set(coin.id, details);
+      if (SEARCH_DETAILS_CACHE.size > 300) SEARCH_DETAILS_CACHE.clear();
+      return { coin, details };
+    } catch (error) {
+      if (signal.aborted) throw error;
+      if (error instanceof HttpError && (error.status === 429 || error.status >= 500)) throw error;
+      return { coin, details: null };
     }
   }));
-  const results = verified.filter((coin): coin is SearchCoin => coin !== null).slice(0, MAX_MONAD_SEARCH_RESULTS);
-  if (MONAD_SEARCH_CACHE.size > 50) MONAD_SEARCH_CACHE.clear();
-  MONAD_SEARCH_CACHE.set(cacheKey, results);
-  return results;
+
+  for (const { coin, details } of detailsRows) {
+    if (!details) continue;
+    for (const [platformId, address] of Object.entries(details.platforms ?? {})) {
+      const platform = platformId.toLowerCase();
+      const network = SEARCH_NETWORKS.find((candidate) =>
+        candidate.platformAliases.some((alias) => platform === alias || platform.includes(alias))
+      );
+      if (network && address?.trim()) addResult(coin, network, "Token", address);
+    }
+  }
+
+  const networkOrder: Record<SearchNetworkId, number> = { bitcoin: 0, ethereum: 1, bnb: 2, solana: 3, monad: 4 };
+  results.sort((a, b) => {
+    const aRank = candidates.findIndex((coin) => coin.id === a.id);
+    const bRank = candidates.findIndex((coin) => coin.id === b.id);
+    return aRank - bRank || networkOrder[a.networkId] - networkOrder[b.networkId];
+  });
+  const limited = results.slice(0, MAX_MULTICHAIN_SEARCH_RESULTS);
+  if (MULTICHAIN_SEARCH_CACHE.size > 60) MULTICHAIN_SEARCH_CACHE.clear();
+  MULTICHAIN_SEARCH_CACHE.set(cacheKey, limited);
+  return limited;
 }
 
 async function fetchChart(
@@ -602,6 +684,16 @@ export default function TokenAssetsWidget({
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchSelected, setSearchSelected] = useState<SearchCoin | null>(null);
+  const [searchNetworkFilter, setSearchNetworkFilter] = useState<SearchNetworkFilter>("all");
+  const visibleSearchResults = useMemo(
+    () => searchNetworkFilter === "all" ? searchResults : searchResults.filter((coin) => coin.networkId === searchNetworkFilter),
+    [searchNetworkFilter, searchResults],
+  );
+  const searchNetworkCounts = useMemo(() => {
+    const counts: Record<SearchNetworkFilter, number> = { all: searchResults.length, bitcoin: 0, ethereum: 0, bnb: 0, solana: 0, monad: 0 };
+    searchResults.forEach((coin) => { counts[coin.networkId] += 1; });
+    return counts;
+  }, [searchResults]);
   const walletConnected = walletConnectedProp || holdings.length > 0;
 
   /* ---- ids we need prices for ---- */
@@ -788,6 +880,7 @@ export default function TokenAssetsWidget({
     setSearchOpen(false);
     setSearchQuery("");
     setSearchResults([]);
+    setSearchNetworkFilter("all");
     const existing = allAssets.find((asset) => asset.id === coin.id);
     if (existing) onSelect?.(existing);
   };
@@ -805,7 +898,7 @@ export default function TokenAssetsWidget({
       setSearchLoading(true);
       setSearchError(null);
       try {
-        const results = await searchMonadTokens(baseUrl, headers, query, controller.signal);
+        const results = await searchMultichainAssets(baseUrl, headers, query, controller.signal);
         if (!controller.signal.aborted) setSearchResults(results);
       } catch (e) {
         if (!controller.signal.aborted) {
@@ -815,7 +908,7 @@ export default function TokenAssetsWidget({
       } finally {
         if (!controller.signal.aborted) setSearchLoading(false);
       }
-    }, 450);
+    }, 320);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
@@ -966,15 +1059,22 @@ export default function TokenAssetsWidget({
             {searchOpen && (
               <input className="ta-search-input" type="search" value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                onKeyDown={(event) => { if (event.key === "Escape") { setSearchOpen(false); setSearchQuery(""); } }}
-                placeholder="Search Monad tokens" aria-label="Search supported Monad blockchain tokens" autoFocus />
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setSearchOpen(false); setSearchQuery(""); setSearchResults([]); setSearchNetworkFilter("all");
+                  }
+                }}
+                placeholder="Search any coin or symbol" aria-label="Search assets across supported blockchains" autoFocus />
             )}
             <button type="button" className="ta-search-trigger"
-              aria-label={searchOpen ? "Close token search" : "Search Monad tokens"} aria-expanded={searchOpen}
+              aria-label={searchOpen ? "Close asset search" : "Search all supported blockchains"} aria-expanded={searchOpen}
               onClick={() => {
                 triggerHaptic();
-                if (searchOpen) { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }
-                else setSearchOpen(true);
+                if (searchOpen) {
+                  setSearchOpen(false); setSearchQuery(""); setSearchResults([]); setSearchNetworkFilter("all");
+                } else {
+                  setSearchNetworkFilter("all"); setSearchOpen(true);
+                }
               }}>
               {searchOpen ? (
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" /></svg>
@@ -983,17 +1083,56 @@ export default function TokenAssetsWidget({
               )}
             </button>
             {searchOpen && searchQuery.trim().length >= 2 && (
-              <div className="ta-search-results" role="listbox" aria-label="Monad token search results">
-                {searchLoading ? <div className="ta-search-message">Searching verified Monad listings…</div>
-                  : searchError ? <div className="ta-search-message error">{searchError}</div>
-                  : searchResults.length === 0 ? <div className="ta-search-message">No verified Monad tokens found for “{searchQuery.trim()}”.</div>
-                  : searchResults.map((coin) => (
-                    <button key={coin.id} type="button" role="option" aria-selected={coin.id === selected?.id} className="ta-search-result" onClick={() => chooseSearchToken(coin)}>
-                      <span className="ta-search-result-symbol">{coin.symbol.toUpperCase()}</span>
-                      <span className="ta-search-result-copy"><b>{coin.name}</b><small>{coin.symbol.toUpperCase()} · Monad network</small></span>
-                      <span className="ta-search-result-view">View</span>
+              <div className="ta-search-results" role="dialog" aria-label="Multichain asset search results">
+                <div className="ta-search-results-head">
+                  <div>
+                    <strong>Search results</strong>
+                    <span>Verified assets across supported networks</span>
+                  </div>
+                  <span className="ta-search-count">{searchLoading ? "Searching" : `${searchResults.length} found`}</span>
+                </div>
+                <div className="ta-search-filters" role="tablist" aria-label="Filter results by blockchain">
+                  {SEARCH_NETWORK_FILTERS.map((filter) => (
+                    <button key={filter.id} type="button" role="tab"
+                      aria-selected={searchNetworkFilter === filter.id}
+                      className={searchNetworkFilter === filter.id ? "ta-search-filter on" : "ta-search-filter"}
+                      onClick={() => { triggerHaptic(5); setSearchNetworkFilter(filter.id); }}>
+                      {filter.label}
+                      <span>{searchNetworkCounts[filter.id]}</span>
                     </button>
                   ))}
+                </div>
+                <div className="ta-search-result-list" role="listbox" aria-label="Verified assets">
+                  {searchLoading ? (
+                    <div className="ta-search-message search-loading-message"><span className="ta-search-spinner" />Searching assets and verifying network deployments…</div>
+                  ) : searchError ? (
+                    <div className="ta-search-message error">{searchError}<small>Check your connection or try again shortly.</small></div>
+                  ) : visibleSearchResults.length === 0 ? (
+                    <div className="ta-search-empty">
+                      <span className="ta-search-empty-icon">⌕</span>
+                      <strong>{searchResults.length === 0 ? "No verified assets found" : "No results on this network"}</strong>
+                      <span>{searchResults.length === 0
+                        ? `No supported native asset or verified token deployment matched “${searchQuery.trim()}”.`
+                        : `Try another network or choose All networks to see the verified matches for “${searchQuery.trim()}”.`}</span>
+                    </div>
+                  ) : visibleSearchResults.map((coin) => (
+                    <button key={coin.resultKey} type="button" role="option"
+                      aria-selected={coin.id === selected?.id && searchSelected?.networkId === coin.networkId}
+                      className="ta-search-result" onClick={() => chooseSearchToken(coin)}>
+                      <Logo src={coin.thumb ?? null} symbol={coin.symbol.toUpperCase()} size={38} />
+                      <span className="ta-search-result-copy">
+                        <b>{coin.name}</b>
+                        <small>{coin.symbol.toUpperCase()} <span className="ta-search-dot">·</span> {coin.assetKind}</small>
+                        <small className="ta-search-address" title={coin.contractAddress ?? "Native asset"}>
+                          {coin.contractAddress ? `${coin.contractAddress.slice(0, 7)}…${coin.contractAddress.slice(-5)}` : "Native asset"}
+                        </small>
+                      </span>
+                      <span className={`ta-search-network-badge ${coin.networkId}`}>{coin.networkLabel}</span>
+                      <span className="ta-search-result-view" aria-hidden="true">↗</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="ta-search-results-foot">Only native assets and network deployments with a listed contract address are shown.</div>
               </div>
             )}
           </div>
