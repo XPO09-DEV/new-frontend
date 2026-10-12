@@ -71,12 +71,12 @@ const WALLET_ASSETS_PATH = ((import.meta.env.VITE_SUBTLEPAY_WALLET_ASSETS_PATH a
 const BALANCE_CACHE_TTL = 60_000;
 const balanceCache = new Map<string, { savedAt: number; assets: WalletAsset[] }>();
 
-function backendBaseUrl(): string {
+export function getBackendApiBaseUrl(): string {
   if (API_BASE_URL) return API_BASE_URL;
   if (typeof window === "undefined") return "";
   // Vite dev server and the Fastify API use separate local ports by default.
   if (["localhost", "127.0.0.1"].includes(window.location.hostname) && window.location.port === "5173") {
-    return "http://127.0.0.1:4000";
+    return `${window.location.protocol}//${window.location.hostname}:4000`;
   }
   return window.location.origin;
 }
@@ -189,7 +189,7 @@ export async function fetchWalletAssets(address: string, force = false): Promise
   const cached = balanceCache.get(cacheKey);
   if (!force && cached && Date.now() - cached.savedAt < BALANCE_CACHE_TTL) return cached.assets;
 
-  const base = backendBaseUrl();
+  const base = getBackendApiBaseUrl();
   if (!base) throw new Error("The Subtle Pay backend URL is not configured.");
   const path = WALLET_ASSETS_PATH.startsWith("/") ? WALLET_ASSETS_PATH : `/${WALLET_ASSETS_PATH}`;
   const url = new URL(path, base);
