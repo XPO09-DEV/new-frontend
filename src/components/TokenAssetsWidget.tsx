@@ -1,5 +1,5 @@
-﻿import { useCallback, useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { CURRENCIES, getCurrencySymbol, readDefaultCurrency } from "../data/currencies";
+﻿import { useCallback, useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { CURRENCIES, DEFAULT_CURRENCY_KEY, getCurrencySymbol, readDefaultCurrency } from "../data/currencies";
 import "./TokenAssetsWidget.css";
 
 /* ------------------------------------------------------------------ */
@@ -39,6 +39,8 @@ export interface TokenAsset {
 export interface TokenAssetsWidgetProps {
   /** Wallet holdings supplied by the connected account/provider. IDs are CoinGecko coin IDs. */
   holdings?: Holding[];
+  /** Set true only when holdings come from a connected wallet provider. */
+  walletConnected?: boolean;
   /** Fallback tokens included when market data is available, even without a supplied holding. */
   pinned?: PinnedToken[];
   apiKey?: string;
@@ -63,10 +65,12 @@ export interface TokenAssetsWidgetProps {
 /* Constants + helpers                                                 */
 /* ------------------------------------------------------------------ */
 
+const EMPTY_HOLDINGS: Holding[] = [];
+
 const DEFAULT_PINNED: PinnedToken[] = [
-  { id: "monad", symbol: "MON", name: "Monad" },
-  { id: "usd-coin", symbol: "USDC", name: "USD Coin" },
   { id: "tether", symbol: "USDT", name: "Tether USD" },
+  { id: "usd-coin", symbol: "USDC", name: "USD Coin" },
+  { id: "monad", symbol: "MON", name: "Monad" },
 ];
 
 const TFS: Timeframe[] = ["1D", "1W", "1M", "3M", "1Y", "All"];
@@ -83,7 +87,7 @@ class HttpError extends Error {
 function errMsg(e: unknown): string {
   if (e instanceof HttpError) {
     if (e.status === 401 || e.status === 403) return "API key was rejected. Check apiKey and keyHeader.";
-    if (e.status === 429) return "Rate limit reached. Retrying shortly.";
+    if (e.status === 429) return "Rate limit reached. Try again in a moment.";
     if (e.status >= 500) return "The price service is having trouble.";
     return `Request failed (${e.status}).`;
   }
@@ -114,6 +118,17 @@ function fmtAmount(n: number): string {
   if (a >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
   if (a >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
   return n.toLocaleString("en-US", { maximumFractionDigits: a >= 1000 ? 2 : 6 });
+}
+
+function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function thin(pts: Point[], max = 140): Point[] {
@@ -168,6 +183,21 @@ interface MarketInfo {
   pct24: number | null;
 }
 
+interface SearchCoin {
+  id: string;
+  symbol: string;
+  name: string;
+  thumb?: string;
+}
+interface SearchCoinDetails {
+  asset_platform_id?: string | null;
+  platforms?: Record<string, string>;
+}
+const MONAD_SEARCH_CACHE = new Map<string, SearchCoin[]>();
+const MONAD_PLATFORM_CACHE = new Map<string, boolean>();
+const MAX_MONAD_SEARCH_RESULTS = 5;
+const MAX_MONAD_SEARCH_CANDIDATES = 8;
+
 async function fetchMarkets(
   base: string,
   headers: Record<string, string>,
@@ -194,6 +224,40 @@ async function fetchMarkets(
     }
   }
   return out;
+}
+
+async function searchMonadTokens(base: string, headers: Record<string, string>, query: string, signal: AbortSignal): Promise<SearchCoin[]> {
+  const cacheKey = `${base}|${query.trim().toLowerCase()}`;
+  const cached = MONAD_SEARCH_CACHE.get(cacheKey);
+  if (cached) return cached;
+  const payload = await getJSON<{ coins: SearchCoin[] }>(`${base}/search?query=${encodeURIComponent(query.trim())}`, headers, signal);
+  const candidates = (payload.coins ?? []).slice(0, MAX_MONAD_SEARCH_CANDIDATES);
+  const verified = await Promise.all(candidates.map(async (coin): Promise<SearchCoin | null> => {
+    // CoinGecko lists the native MON asset without a contract platform.
+    if (coin.id.toLowerCase() === "monad") return coin;
+    const known = MONAD_PLATFORM_CACHE.get(coin.id);
+    if (known === true) return coin;
+    if (known === false) return null;
+    try {
+      const details = await getJSON<SearchCoinDetails>(
+        `${base}/coins/${encodeURIComponent(coin.id)}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false&sparkline=false`,
+        headers, signal,
+      );
+      const platforms = [details.asset_platform_id ?? "", ...Object.keys(details.platforms ?? {})].map((p) => p.toLowerCase());
+      const isMonad = platforms.some((p) => p.includes("monad"));
+      MONAD_PLATFORM_CACHE.set(coin.id, isMonad);
+      return isMonad ? coin : null;
+    } catch (e) {
+      if (signal.aborted) throw e;
+      if (e instanceof HttpError && (e.status === 429 || e.status >= 500)) throw e;
+      MONAD_PLATFORM_CACHE.set(coin.id, false);
+      return null;
+    }
+  }));
+  const results = verified.filter((coin): coin is SearchCoin => coin !== null).slice(0, MAX_MONAD_SEARCH_RESULTS);
+  if (MONAD_SEARCH_CACHE.size > 50) MONAD_SEARCH_CACHE.clear();
+  MONAD_SEARCH_CACHE.set(cacheKey, results);
+  return results;
 }
 
 async function fetchChart(
@@ -248,9 +312,10 @@ interface ChartProps {
   hover: number | null;
   onHover: (i: number | null) => void;
   animKey: string;
+  currency: string;
 }
 
-function Chart({ pts, tf, error, hover, onHover, animKey }: ChartProps) {
+function Chart({ pts, tf, error, hover, onHover, animKey, currency }: ChartProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(300);
   const [range, setRange] = useState({ start: 0, end: Math.max(1, (pts?.length ?? 2) - 1) });
@@ -364,7 +429,27 @@ function Chart({ pts, tf, error, hover, onHover, animKey }: ChartProps) {
     onHover(null);
   }
 
+  function zoomBy(factor: number, anchorRatio = 0.5) {
+    if (fullEnd < 2) return;
+    const currentSpan = Math.max(1, safeEnd - safeStart);
+    const nextSpan = Math.max(1, Math.min(fullEnd, Math.round(currentSpan * factor)));
+    const ratio = Math.min(1, Math.max(0, anchorRatio));
+    const anchorIndex = safeStart + ratio * currentSpan;
+    const proposedStart = Math.round(anchorIndex - ratio * nextSpan);
+    const nextStart = Math.max(0, Math.min(fullEnd - nextSpan, proposedStart));
+    setRange({ start: nextStart, end: Math.min(fullEnd, nextStart + nextSpan) });
+    onHover(null);
+  }
+  function wheel(e: ReactWheelEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / Math.max(1, rect.width)));
+    zoomBy(e.deltaY < 0 ? 0.72 : 1.4, ratio);
+  }
+
   const hp = geo && hover != null ? geo.xy[Math.max(0, Math.min(geo.xy.length - 1, hover - safeStart))] : null;
+  const inspectedPoint = pts && hover != null ? pts[Math.max(0, Math.min(pts.length - 1, hover))] : null;
+  const trendColor = pts && pts.length > 1 && pts[pts.length - 1][1] < pts[0][1] ? "#dc2626" : "#16a34a";
   const isZoomed = safeStart > 0 || safeEnd < fullEnd;
 
   return (
@@ -377,31 +462,33 @@ function Chart({ pts, tf, error, hover, onHover, animKey }: ChartProps) {
         onPointerUp={pointerEnd}
         onPointerCancel={pointerEnd}
         onPointerLeave={() => { if (pointerPositions.current.size === 0) onHover(null); }}
-        aria-label="Price graph. Drag to inspect and pinch with two fingers to zoom."
+        onWheel={wheel}
+        onDoubleClick={resetZoom}
+        aria-label="Price graph. Hover or drag to inspect; scroll, use the zoom controls, or pinch to zoom."
       >
         {geo && (
           <svg width={w} height={CH_H} viewBox={`0 0 ${w} ${CH_H}`} role="img" aria-label="Price chart">
             <defs>
               <linearGradient id={`g${gid}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#4285F4" stopOpacity=".24" />
-                <stop offset="1" stopColor="#4285F4" stopOpacity="0" />
+                <stop offset="0" stopColor={trendColor} stopOpacity=".24" />
+                <stop offset="1" stopColor={trendColor} stopOpacity="0" />
               </linearGradient>
             </defs>
             {[0.25, 0.5, 0.75].map((f) => <line key={f} x1="0" x2={w} y1={CH_H * f} y2={CH_H * f} className="ta-grid" />)}
             <g key={animKey}>
               <path d={geo.area} fill={`url(#g${gid})`} className="ta-area" />
-              <path d={geo.line} fill="none" stroke="#4285F4" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" pathLength={1} className="ta-line" />
+              <path d={geo.line} fill="none" stroke={trendColor} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" pathLength={1} className="ta-line" />
             </g>
             {hp ? (
               <>
                 <line x1={hp[0]} x2={hp[0]} y1="0" y2={CH_H} className="ta-cross" />
-                <circle cx={hp[0]} cy={hp[1]} r="8" fill="#4285F4" opacity=".16" />
-                <circle cx={hp[0]} cy={hp[1]} r="4.5" fill="#4285F4" stroke="#fff" strokeWidth="2" />
+                <circle cx={hp[0]} cy={hp[1]} r="8" fill={trendColor} opacity=".16" />
+                <circle cx={hp[0]} cy={hp[1]} r="4.5" fill={trendColor} stroke="#fff" strokeWidth="2" />
               </>
             ) : (
               <>
-                <circle cx={geo.last[0]} cy={geo.last[1]} r="4" fill="#4285F4" className="ta-pulse" />
-                <circle cx={geo.last[0]} cy={geo.last[1]} r="4.5" fill="#4285F4" stroke="#fff" strokeWidth="2" />
+                <circle cx={geo.last[0]} cy={geo.last[1]} r="4" fill={trendColor} className="ta-pulse" />
+                <circle cx={geo.last[0]} cy={geo.last[1]} r="4.5" fill={trendColor} stroke="#fff" strokeWidth="2" />
               </>
             )}
           </svg>
@@ -416,8 +503,19 @@ function Chart({ pts, tf, error, hover, onHover, animKey }: ChartProps) {
         <span>{axis[3] ?? "Latest"}</span>
       </div>
       <div className="ta-chart-tools">
-        <span>Pinch to zoom Â· drag to inspect</span>
-        {isZoomed && <button type="button" onClick={resetZoom}>Reset zoom</button>}
+        <span className="ta-chart-inspection" aria-live="polite">
+          {inspectedPoint ? (
+            <>
+              <b>{fmtMoney(inspectedPoint[1], currency, "price")}</b>
+              <span>{new Date(inspectedPoint[0]).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" })}</span>
+            </>
+          ) : "Hover for exact price · scroll/pinch to zoom"}
+        </span>
+        <div className="ta-chart-zoom">
+          <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => zoomBy(1.4)}>−</button>
+          <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => zoomBy(0.72)}>+</button>
+          {isZoomed && <button type="button" onClick={resetZoom}>Reset</button>}
+        </div>
       </div>
     </>
   );
@@ -428,7 +526,8 @@ function Chart({ pts, tf, error, hover, onHover, animKey }: ChartProps) {
 /* ------------------------------------------------------------------ */
 
 export default function TokenAssetsWidget({
-  holdings = [],
+  holdings = EMPTY_HOLDINGS,
+  walletConnected: walletConnectedProp = false,
   pinned = DEFAULT_PINNED,
   apiKey,
   baseUrl = "https://api.coingecko.com/api/v3",
@@ -486,11 +585,18 @@ export default function TokenAssetsWidget({
   const [selectedId, setSelectedId] = useState<string>("");
   const [expanded, setExpanded] = useState(false);
   const [hover, setHover] = useState<number | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchCoin[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchSelected, setSearchSelected] = useState<SearchCoin | null>(null);
+  const walletConnected = walletConnectedProp || holdings.length > 0;
 
   /* ---- ids we need prices for ---- */
   const idsKey = useMemo(
-    () => Array.from(new Set([...pinned.map((p) => p.id), ...holdings.map((h) => h.id)])).join(","),
-    [pinned, holdings],
+    () => Array.from(new Set([...pinned.map((p) => p.id), ...holdings.map((h) => h.id), ...(searchSelected ? [searchSelected.id] : [])])).join(","),
+    [pinned, holdings, searchSelected?.id],
   );
 
   /* ---- markets (live) ---- */
@@ -498,7 +604,12 @@ export default function TokenAssetsWidget({
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const [reload, setReload] = useState(0);
+  useEffect(() => {
+    const ticker = window.setInterval(() => setClockNow(Date.now()), 1000);
+    return () => window.clearInterval(ticker);
+  }, []);
 
   const previousCurrency = useRef(currency);
   useEffect(() => {
@@ -508,6 +619,7 @@ export default function TokenAssetsWidget({
     if (currencyChanged) {
       setMarket({});
       setError(null);
+      setUpdatedAt(null);
       setStatus("loading");
     }
     const ids = idsKey.split(",").filter(Boolean);
@@ -572,12 +684,25 @@ export default function TokenAssetsWidget({
   }, [holdings, pinned, market]);
 
   const allAssets = useMemo(
-    () => [...pinnedAssets, ...heldAssets].sort((a, b) => b.value - a.value),
+    // Keep pinned assets in the explicit USDT, USDC, MON order; wallet holdings stay value-sorted below them.
+    () => [...pinnedAssets, ...heldAssets],
     [pinnedAssets, heldAssets],
   );
   const hiddenCount = Math.max(0, allAssets.length - visibleHeld);
   const rows = expanded ? allAssets : allAssets.slice(0, visibleHeld);
-  const selected = allAssets.find((a) => a.id === selectedId) ?? allAssets[0] ?? null;
+  const selectedSearchAsset: TokenAsset | null = searchSelected ? {
+    id: searchSelected.id,
+    symbol: market[searchSelected.id]?.symbol || searchSelected.symbol.toUpperCase(),
+    name: market[searchSelected.id]?.name || searchSelected.name,
+    image: market[searchSelected.id]?.image ?? searchSelected.thumb ?? null,
+    price: market[searchSelected.id]?.price ?? null,
+    pct24: market[searchSelected.id]?.pct24 ?? null,
+    amount: 0,
+    value: 0,
+    pinned: false,
+  } : null;
+  const selected = allAssets.find((a) => a.id === selectedId) ?? selectedSearchAsset ?? allAssets[0] ?? null;
+  const selectedIsSearchPreview = !!selected && !allAssets.some((asset) => asset.id === selected.id);
 
   /* ---- chart for the selected token (cached) ---- */
   const [charts, setCharts] = useState<Record<string, Point[]>>({});
@@ -637,10 +762,52 @@ export default function TokenAssetsWidget({
   const holdValue = selected && shownPrice != null ? selected.amount * shownPrice : 0;
 
   const choose = (a: TokenAsset) => {
+    setSearchSelected(null);
     setSelectedId(a.id);
     setHover(null);
     onSelect?.(a);
   };
+
+  const chooseSearchToken = (coin: SearchCoin) => {
+    setSearchSelected(coin);
+    setSelectedId(coin.id);
+    setHover(null);
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    const existing = allAssets.find((asset) => asset.id === coin.id);
+    if (existing) onSelect?.(existing);
+  };
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!searchOpen || query.length < 2) {
+      setSearchResults([]);
+      setSearchError(null);
+      setSearchLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setSearchLoading(true);
+      setSearchError(null);
+      try {
+        const results = await searchMonadTokens(baseUrl, headers, query, controller.signal);
+        if (!controller.signal.aborted) setSearchResults(results);
+      } catch (e) {
+        if (!controller.signal.aborted) {
+          setSearchResults([]);
+          setSearchError(errMsg(e));
+        }
+      } finally {
+        if (!controller.signal.aborted) setSearchLoading(false);
+      }
+    }, 450);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [baseUrl, headers, searchOpen, searchQuery]);
 
   const stale = status === "ready" && !!error;
 
@@ -657,9 +824,12 @@ export default function TokenAssetsWidget({
                 <small>{selected.name}</small>
               </span>
               <div className="ta-hero-actions" ref={currencyMenuRef}>
-                <span className={`ta-live-status ${status !== "ready" || stale ? "off" : ""}`} aria-live="polite">
-                  <i />
-                  {status === "error" ? "Offline" : stale ? "Delayed" : status === "loading" ? "Connecting" : "Live"}
+                <span className={`ta-live-status ${status !== "ready" || stale ? "off" : ""}`} title={updatedAt ? `Last successful price fetch ${formatElapsed(clockNow - updatedAt)}` : "Waiting for the first successful price fetch"}>
+                  {status === "error"
+                    ? updatedAt ? `Offline · updated ${formatElapsed(clockNow - updatedAt)}` : "Price unavailable"
+                    : !updatedAt ? "Fetching price…"
+                    : stale ? `Delayed · updated ${formatElapsed(clockNow - updatedAt)}`
+                    : `Updated ${formatElapsed(clockNow - updatedAt)}`}
                 </span>
                 <button
                   type="button"
@@ -686,6 +856,12 @@ export default function TokenAssetsWidget({
                           className={`ta-currency-option ${currency === option.code ? "selected" : ""}`}
                           onClick={() => {
                             setCurrency(option.code);
+                            try {
+                              window.localStorage.setItem(DEFAULT_CURRENCY_KEY, option.code);
+                            } catch {
+                              // Keep the selection usable when browser storage is unavailable.
+                            }
+                            window.dispatchEvent(new CustomEvent("subtlepay:default-currency", { detail: option.code }));
                             setCurrencyMenuOpen(false);
                             setHover(null);
                           }}
@@ -712,12 +888,28 @@ export default function TokenAssetsWidget({
             </div>
 
             <div className="ta-hold">
-              <span>Your balance</span>
-              <b>{fmtAmount(selected.amount)} {selected.symbol}</b>
-              <span className="ta-hold-val">â‰ˆ {fmtMoney(holdValue, currency, "value")}</span>
+              {selectedIsSearchPreview ? (
+                <>
+                  <span>Market preview</span>
+                  <b>Not in wallet</b>
+                  <span className="ta-hold-val">{fmtMoney(selected.price, currency, "price")}</span>
+                </>
+              ) : walletConnected ? (
+                <>
+                  <span>Your balance</span>
+                  <b>{fmtAmount(selected.amount)} {selected.symbol}</b>
+                  <span className="ta-hold-val">≈ {fmtMoney(holdValue, currency, "value")}</span>
+                </>
+              ) : (
+                <>
+                  <span>Wallet</span>
+                  <b>Not connected</b>
+                  <span className="ta-hold-val">Connect a wallet to view holdings</span>
+                </>
+              )}
             </div>
 
-            <Chart pts={view} tf={tf} error={!view ? chartErr : null} hover={hover} onHover={setHover} animKey={`${selected.id}:${tf}:${currency}`} />
+            <Chart pts={view} tf={tf} error={!view ? chartErr : null} hover={hover} onHover={setHover} animKey={`${selected.id}:${tf}:${currency}`} currency={currency} />
           </>
         ) : (
           <div className="ta-skel" style={{ height: 190 }} />
@@ -752,7 +944,45 @@ export default function TokenAssetsWidget({
           Token Assets
           <i className="ta-q" title="Total value of the tokens in your wallet">?</i>
         </span>
-        <b>{status === "loading" ? "â€”" : fmtMoney(total, currency, "value")}</b>
+        <div className="ta-list-controls">
+          <b title={walletConnected ? "Total wallet market value" : "Wallet is not connected"}>
+            {status === "loading" ? "—" : walletConnected ? fmtMoney(total, currency, "value") : "—"}
+          </b>
+          <div className={`ta-search ${searchOpen ? "is-open" : ""}`}>
+            {searchOpen && (
+              <input className="ta-search-input" type="search" value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => { if (event.key === "Escape") { setSearchOpen(false); setSearchQuery(""); } }}
+                placeholder="Search Monad tokens" aria-label="Search supported Monad blockchain tokens" autoFocus />
+            )}
+            <button type="button" className="ta-search-trigger"
+              aria-label={searchOpen ? "Close token search" : "Search Monad tokens"} aria-expanded={searchOpen}
+              onClick={() => {
+                if (searchOpen) { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }
+                else setSearchOpen(true);
+              }}>
+              {searchOpen ? (
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" /></svg>
+              ) : (
+                <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4 4" /></svg>
+              )}
+            </button>
+            {searchOpen && searchQuery.trim().length >= 2 && (
+              <div className="ta-search-results" role="listbox" aria-label="Monad token search results">
+                {searchLoading ? <div className="ta-search-message">Searching verified Monad listings…</div>
+                  : searchError ? <div className="ta-search-message error">{searchError}</div>
+                  : searchResults.length === 0 ? <div className="ta-search-message">No verified Monad tokens found for “{searchQuery.trim()}”.</div>
+                  : searchResults.map((coin) => (
+                    <button key={coin.id} type="button" role="option" aria-selected={coin.id === selected?.id} className="ta-search-result" onClick={() => chooseSearchToken(coin)}>
+                      <span className="ta-search-result-symbol">{coin.symbol.toUpperCase()}</span>
+                      <span className="ta-search-result-copy"><b>{coin.name}</b><small>{coin.symbol.toUpperCase()} · Monad network</small></span>
+                      <span className="ta-search-result-view">View</span>
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="ta-list" role="listbox" aria-label="Your tokens">
@@ -786,8 +1016,8 @@ export default function TokenAssetsWidget({
                 <small>{fmtMoney(a.price, currency, "price")}</small>
               </span>
               <span className="ta-nums">
-                <b>{fmtAmount(a.amount)}</b>
-                <small>{fmtMoney(a.value, currency, "value")}</small>
+                <b>{walletConnected ? fmtAmount(a.amount) : "—"}</b>
+                <small>{walletConnected ? fmtMoney(a.value, currency, "value") : "Wallet not connected"}</small>
               </span>
             </button>
           ))}
