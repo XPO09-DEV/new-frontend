@@ -24,6 +24,7 @@ const desktopItems: { id: PageId; label: string; icon: "wallet" | "activity" | "
 export default function App() {
   const [selectedToken, setSelectedToken] = useState<TokenSymbol>("ETH");
   const [activePage, setActivePage] = useState<PageId>("wallet");
+  const [prefilledRecipient, setPrefilledRecipient] = useState("");
   const [showOpening, setShowOpening] = useState(true);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [displayName, setDisplayName] = useState(() => {
@@ -109,8 +110,8 @@ export default function App() {
         )}
 
         <main className="page-scroll">
-          {activePage === "wallet" && <Dashboard selectedToken={selectedToken} onTokenChange={setSelectedToken} onNavigate={setActivePage} displayName={displayName} />}
-          {activePage === "send" && <Send onBack={() => setActivePage("wallet")} />}
+          {activePage === "wallet" && <Dashboard selectedToken={selectedToken} onTokenChange={setSelectedToken} onNavigate={setActivePage} onSendToContact={(recipient) => { setPrefilledRecipient(recipient); setActivePage("send"); }} displayName={displayName} />}
+          {activePage === "send" && <Send onBack={() => { setPrefilledRecipient(""); setActivePage("wallet"); }} initialRecipient={prefilledRecipient} />}
           {activePage === "receive" && <Receive />}
           {activePage === "merchant" && <Merchant />}
           {activePage === "more" && <More />}
