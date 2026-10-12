@@ -27,7 +27,7 @@ const groups: { id: SectionId; title: string; description: string; icon: IconNam
   ]},
 ];
 
-export default function More() {
+export default function More({ accountId = "", walletAddress = null, onLogout }: { accountId?: string; walletAddress?: string | null; onLogout: () => void }) {
   const [expanded, setExpanded] = useState<SectionId | null>("account");
   const [notice, setNotice] = useState("");
   const [currencySettingsOpen, setCurrencySettingsOpen] = useState(false);
@@ -38,9 +38,10 @@ export default function More() {
 
       <section className="profile-panel">
         <span className="profile-avatar"><Icon name="user" size={22} /></span>
-        <div className="profile-copy"><strong>Account</strong><span>Wallet and identity</span><small>Account services unavailable</small></div>
+        <div className="profile-copy"><strong>Subtle Pay account</strong><span>{accountId || "Signed-in account"}</span><small>{walletAddress ? `Monad Testnet · ${walletAddress.slice(0, 8)}…${walletAddress.slice(-6)}` : "Account wallet unavailable"}</small></div>
         <span className="profile-status-dot" />
       </section>
+      <button type="button" className="secondary-button" onClick={onLogout}><Icon name="logout" size={16} /> Sign out</button>
 
       <div className="settings-group-list">
         {groups.map((group) => (
