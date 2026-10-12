@@ -1292,6 +1292,8 @@ export default function TokenAssetsWidget({
         </div>
       </div>
 
+      {walletConnected && allAssets.length > 0 && <p className="ta-assets-safety-note">Indexed balances may include spam or unverified tokens. Check the network and full contract address before sending unfamiliar assets.</p>}
+
       <div className="ta-list" role="listbox" aria-label="Your tokens">
         {status === "loading" &&
           Array.from({ length: 3 }).map((_, i) => (
