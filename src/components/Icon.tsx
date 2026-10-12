@@ -5,10 +5,11 @@ export type IconName =
   | "bell" | "chevron-down" | "copy" | "check" | "clock" | "shield" | "document" | "download" | "scan" | "upload"
   | "settings" | "user" | "fingerprint" | "refresh" | "arrow-left" | "search" | "close" | "globe" | "building"
   | "trend-up" | "info" | "receipt" | "arrow-right" | "alert" | "lock" | "file" | "link" | "check-circle"
-  | "logout" | "users" | "smartphone" | "credit-card" | "key" | "sliders" | "chevrons-up-down" | "qr";
+  | "logout" | "users" | "smartphone" | "credit-card" | "key" | "sliders" | "chevrons-up-down" | "qr" | "coins";
 
 const glyphs: Record<IconName, ReactNode> = {
   wallet: <><rect x="3" y="5" width="18" height="15" rx="3" /><path d="M3 9h18" /><path d="M16 14h.01" /><path d="M6 5V3h12v2" /></>,
+  coins: <><ellipse cx="12" cy="6" rx="7" ry="3" /><path d="M5 6v5c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 11v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5" /></>,
   send: <><path d="M7 17 17 7" /><path d="M7 7h10v10" /></>,
   receive: <><path d="M17 7 7 17" /><path d="M7 7v10h10" /></>,
   merchant: <><path d="M3 10h18l-2-6H5l-2 6Z" /><path d="M5 10v10h14V10" /><path d="M9 20v-6h6v6" /></>,
