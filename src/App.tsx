@@ -43,7 +43,10 @@ function readSavedName() {
 }
 
 export default function App() {
-  const [selectedToken, setSelectedToken] = useState("");
+  const [selectedToken, setSelectedToken] = useState(() => {
+    if (!hasResumeConsent()) return "";
+    try { return window.localStorage.getItem("subtlePayLastAsset") ?? ""; } catch { return ""; }
+  });
   const [activePage, setActivePage] = useState<PageId>(readRestorablePage);
   const [prefilledRecipient, setPrefilledRecipient] = useState("");
   const [showOpening, setShowOpening] = useState(true);
@@ -217,18 +220,6 @@ export default function App() {
     }
   }, [resumeConsent, activePage, selectedToken]);
 
-  useEffect(() => {
-    if (!selectedToken) return;
-    if (!resumeConsent) return;
-    try {
-      const savedAsset = window.localStorage.getItem("subtlePayLastAsset");
-      if (savedAsset && !walletAssets.length) return;
-      if (savedAsset && walletAssets.some((asset) => asset.id === savedAsset)) setSelectedToken(savedAsset);
-    } catch {
-      // Ignore optional resume state.
-    }
-  }, [resumeConsent, walletAssets, selectedToken]);
-
   function saveDisplayName(value: string) {
     const cleaned = value.trim().slice(0, 80);
     try {
@@ -354,8 +345,16 @@ export default function App() {
             initialRecipient={prefilledRecipient}
             walletAddress={walletAddress}
             walletChainId={walletChainId}
+            walletAssets={walletAssets}
+            onConnectWallet={connectWallet}
+            onTransactionSubmitted={() => { if (walletAddress) void refreshWallet(walletAddress, true); }}
           />}
-          {activePage === "receive" && <Receive walletAddress={walletAddress} walletChainId={walletChainId} />}
+          {activePage === "receive" && <Receive
+            walletAddress={walletAddress}
+            walletChainId={walletChainId}
+            displayName={displayName}
+            onConnectWallet={connectWallet}
+          />}
           {activePage === "merchant" && <Merchant />}
           {activePage === "more" && <More />}
           {activePage === "activity" && <Activity />}
