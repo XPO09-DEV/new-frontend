@@ -237,5 +237,5 @@ export async function getPaymentHistory(): Promise<PaymentRecord[]> {
 }
 
 export async function getAccountRates(currency: "USD" | "INR" = "USD"): Promise<{ tokenUsd: number; usdLocal: number; currency: string; updatedAt: string }> {
-  return authenticatedRequest<{ tokenUsd: number; usdLocal: number; currency: string; updatedAt: string }>(`/rates?currency=${currency}`, {}, false);
+  return rawRequest<{ tokenUsd: number; usdLocal: number; currency: string; updatedAt: string }>(`/rates?currency=${currency}`, {}, false);
 }
