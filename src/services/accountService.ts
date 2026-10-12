@@ -39,6 +39,13 @@ function apiUrl(path: string): string {
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   let body: unknown = null;
   try { body = await response.json(); } catch { /* empty/non-JSON response */ }
@@ -50,7 +57,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
       : typeof root.message === "string"
         ? root.message
         : `Subtle Pay API request failed (HTTP ${response.status}).`;
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
   return body as T;
 }
@@ -99,7 +106,7 @@ async function authenticatedRequest<T>(path: string, init: RequestInit = {}): Pr
   try {
     return await rawRequest<T>(path, init, true);
   } catch (error) {
-    if (!(error instanceof Error) || !error.message.includes("HTTP 401") || path === "/auth/refresh") throw error;
+    if (!(error instanceof ApiError) || error.status !== 401 || path === "/auth/refresh") throw error;
     const nextToken = await refreshAccessToken();
     if (!nextToken) {
       accessToken = null;
