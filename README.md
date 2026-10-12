@@ -21,7 +21,7 @@ Copy `.env.example` to `.env.local` for local frontend configuration. Set `VITE_
 
 ## Wallet and payment safety
 
-The wallet card and token list display only balances returned for the connected public address; that address itself does not prove ownership. The app submits supported direct EVM transactions only on the asset's own network and never treats an address search as a cross-chain bridge. The injected wallet remains responsible for transaction approval, and Subtle Pay never handles injected-wallet private keys.
+This hackathon integration uses the backend's account system: registration creates an account ID and a custodial wallet whose private key is encrypted and retained server-side. The authenticated account wallet is used for the payment and receiving screens; payments are signed by the backend, not by an injected browser wallet. The integration branch is locked to native MON on Monad Testnet (chain ID 10143). The Send form accepts a USD/INR reference value and shows an estimate; the backend converts that value to testnet MON using its configured rate service. Testnet assets have no cash value. Fund each account wallet with testnet MON before trying to send, and never use real assets or production credentials in this build. This is a hackathon prototype and has not been independently security-audited.
 
 ## Search, prices and charts
 
