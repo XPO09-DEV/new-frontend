@@ -61,12 +61,6 @@ interface AnkrAssetResponse {
   thumbnail?: string;
   tokenType?: string;
 }
-interface AnkrBalanceResponse {
-  jsonrpc?: string;
-  id?: number;
-  error?: { code?: number; message?: string };
-  result?: { assets?: AnkrAssetResponse[]; nextPageToken?: string; totalBalanceUsd?: string };
-}
 
 const API_KEY = (import.meta.env.VITE_ANKR_API_KEY as string | undefined)?.trim() ?? "";
 const MULTICHAIN_URL = API_KEY ? `https://rpc.ankr.com/multichain/${encodeURIComponent(API_KEY)}` : "";
