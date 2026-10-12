@@ -220,3 +220,70 @@
 /* Button stays anchored to the lower-right as requested. */
 .ta-more-wrap { display: flex; justify-content: flex-end; width: 100%; margin-top: 6px; }
 .ta-more { width: auto; margin-top: 0; padding: 10px 12px; }
+
+
+/* ---------- premium finish + tactile interaction ---------- */
+.ta {
+  position: relative;
+  isolation: isolate;
+  border-color: #e5e9f0;
+  background: linear-gradient(180deg, #ffffff 0%, #fdfdff 100%);
+  box-shadow: 0 1px 2px rgba(13, 20, 35, .035), 0 10px 26px -20px rgba(13, 20, 35, .28);
+  animation: ta-card-enter .44s cubic-bezier(.2,.75,.25,1) both;
+}
+@keyframes ta-card-enter {
+  from { opacity: 0; transform: translateY(7px) scale(.996); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.ta :where(button, input):focus-visible { outline: 2px solid #7b86a0; outline-offset: 3px; }
+.ta-currency-trigger, .ta-search-trigger, .ta-chart-tools button, .ta-state button, .ta-more {
+  transition: transform .16s cubic-bezier(.2,.75,.25,1), background-color .18s ease, border-color .18s ease, box-shadow .18s ease, color .18s ease;
+}
+.ta-currency-trigger:hover, .ta-search-trigger:hover {
+  transform: translateY(-1px); border-color: #c8ced9 !important; box-shadow: 0 3px 8px rgba(14, 24, 43, .055);
+}
+.ta-currency-trigger:active, .ta-search-trigger:active, .ta-chart-tools button:active, .ta-state button:active, .ta-more:active {
+  transform: scale(.965); box-shadow: none;
+}
+.ta-currency-menu, .ta-search-results { transform-origin: top right; animation: ta-pop-in .19s cubic-bezier(.2,.75,.25,1) both; }
+@keyframes ta-pop-in { from { opacity: 0; transform: translateY(-4px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.ta-search-input { animation: ta-search-input-in .2s cubic-bezier(.2,.75,.25,1) both; }
+@keyframes ta-search-input-in { from { opacity: 0; transform: translateX(5px); } to { opacity: 1; transform: translateX(0); } }
+.ta-search-result { transform-origin: center; transition: background-color .15s ease, transform .15s ease; }
+.ta-search-result:active { transform: scale(.99); }
+.ta-row { transition: background-color .2s ease, box-shadow .2s ease, transform .2s cubic-bezier(.2,.75,.25,1); will-change: transform; }
+.ta-row:hover { background: #f7f8fb; transform: translateX(2px); }
+.ta-row.is-sel { background: linear-gradient(100deg, #f0f4fc 0%, #f7f8fc 100%); box-shadow: inset 0 0 0 1px rgba(79, 101, 144, .15); }
+.ta-row.is-sel .ta-meta b { letter-spacing: .005em; }
+.ta-tfs button:active { transform: scale(.94); }
+.ta-tfs button.on { color: #202b43; }
+.ta-chart { border-radius: 13px; -webkit-tap-highlight-color: transparent; }
+.ta-chart-tools button:focus-visible, .ta-tfs button:focus-visible, .ta-row:focus-visible { outline-offset: -1px; }
+.ta-live-status { letter-spacing: -.01em; line-height: 1.2; }
+.ta-list-head { margin-top: 20px; padding-top: 16px; border-color: #eceff4; }
+.ta-more {
+  color: #252f43; border: 1px solid #e8ebf1;
+  background: linear-gradient(180deg, #fff 0%, #f8f9fb 100%);
+  box-shadow: 0 1px 1px rgba(14, 24, 43, .025);
+}
+.ta-more:hover { background: #f3f5f8; border-color: #dce1e9; box-shadow: 0 3px 9px rgba(14, 24, 43, .055); }
+.ta-badge { box-shadow: 0 1px 2px rgba(17, 24, 39, .12); }
+.ta-chart-inspection b { letter-spacing: -.015em; }
+.ta-grid { stroke: #e9edf3; }
+.ta-cross { stroke: #9ca8bc; stroke-dasharray: 3 4; }
+.ta-state { animation: ta-pop-in .24s ease both; }
+.ta-skel { background-size: 260% 100%; }
+@media (hover: none) {
+  .ta-row:hover { transform: none; background: transparent; }
+  .ta-row.is-sel:hover { background: linear-gradient(100deg, #f0f4fc 0%, #f7f8fc 100%); }
+}
+@media (max-width: 480px) {
+  .ta { border-radius: 17px; box-shadow: 0 1px 2px rgba(13, 20, 35, .035), 0 8px 22px -19px rgba(13, 20, 35, .22); }
+  .ta-row:hover { transform: none; }
+  .ta-chart-tools { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ta, .ta *, .ta *::before, .ta *::after {
+    animation: none !important; transition: none !important; transform: none !important; scroll-behavior: auto !important;
+  }
+}

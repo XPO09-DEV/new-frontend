@@ -131,6 +131,17 @@ function formatElapsed(ms: number): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/** Tiny optional tap feedback for browsers that expose the Vibration API. */
+function triggerHaptic(duration = 7): void {
+  try {
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      navigator.vibrate(duration);
+    }
+  } catch {
+    // Haptics are progressive enhancement; unsupported devices remain fully usable.
+  }
+}
+
 function thin(pts: Point[], max = 140): Point[] {
   if (pts.length <= max) return pts;
   const out: Point[] = [];
@@ -512,9 +523,9 @@ function Chart({ pts, tf, error, hover, onHover, animKey, currency }: ChartProps
           ) : "Hover for exact price · scroll/pinch to zoom"}
         </span>
         <div className="ta-chart-zoom">
-          <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => zoomBy(1.4)}>−</button>
-          <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => zoomBy(0.72)}>+</button>
-          {isZoomed && <button type="button" onClick={resetZoom}>Reset</button>}
+          <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => { triggerHaptic(); zoomBy(1.4); }}>−</button>
+          <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => { triggerHaptic(); zoomBy(0.72); }}>+</button>
+          {isZoomed && <button type="button" onClick={() => { triggerHaptic(); resetZoom(); }}>Reset</button>}
         </div>
       </div>
     </>
@@ -762,6 +773,7 @@ export default function TokenAssetsWidget({
   const holdValue = selected && shownPrice != null ? selected.amount * shownPrice : 0;
 
   const choose = (a: TokenAsset) => {
+    triggerHaptic();
     setSearchSelected(null);
     setSelectedId(a.id);
     setHover(null);
@@ -769,6 +781,7 @@ export default function TokenAssetsWidget({
   };
 
   const chooseSearchToken = (coin: SearchCoin) => {
+    triggerHaptic();
     setSearchSelected(coin);
     setSelectedId(coin.id);
     setHover(null);
@@ -837,7 +850,7 @@ export default function TokenAssetsWidget({
                   aria-label={`Display currency ${currency.toUpperCase()}. Change currency`}
                   aria-haspopup="listbox"
                   aria-expanded={currencyMenuOpen}
-                  onClick={() => setCurrencyMenuOpen((open) => !open)}
+                  onClick={() => { triggerHaptic(); setCurrencyMenuOpen((open) => !open); }}
                 >
                   <span className="ta-currency-symbol">{getCurrencySymbol(currency)}</span>
                   <span>{currency.toUpperCase()}</span>
@@ -855,6 +868,7 @@ export default function TokenAssetsWidget({
                           key={option.code}
                           className={`ta-currency-option ${currency === option.code ? "selected" : ""}`}
                           onClick={() => {
+                            triggerHaptic();
                             setCurrency(option.code);
                             try {
                               window.localStorage.setItem(DEFAULT_CURRENCY_KEY, option.code);
@@ -922,7 +936,7 @@ export default function TokenAssetsWidget({
               role="tab"
               aria-selected={t === tf}
               title={t === "All" && limitedAll ? "Your API plan limits history to 1 year" : undefined}
-              onClick={() => { setTf(t); setHover(null); }}
+              onClick={() => { triggerHaptic(); setTf(t); setHover(null); }}
             >
               {t}
             </button>
@@ -934,7 +948,7 @@ export default function TokenAssetsWidget({
         <div className="ta-state" role="status">
           <p>Couldn't load token prices</p>
           <span>{error || "Check your API key and internet connection."}</span>
-          <button type="button" onClick={() => setReload((n) => n + 1)}>Try again</button>
+          <button type="button" onClick={() => { triggerHaptic(10); setReload((n) => n + 1); }}>Try again</button>
         </div>
       )}
 
@@ -958,6 +972,7 @@ export default function TokenAssetsWidget({
             <button type="button" className="ta-search-trigger"
               aria-label={searchOpen ? "Close token search" : "Search Monad tokens"} aria-expanded={searchOpen}
               onClick={() => {
+                triggerHaptic();
                 if (searchOpen) { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }
                 else setSearchOpen(true);
               }}>
@@ -1025,7 +1040,7 @@ export default function TokenAssetsWidget({
 
       {status === "ready" && allAssets.length > visibleHeld && (
         <div className="ta-more-wrap">
-          <button className="ta-more" type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
+          <button className="ta-more" type="button" onClick={() => { triggerHaptic(); setExpanded((v) => !v); }} aria-expanded={expanded}>
             {expanded ? "Show less" : `See more (${hiddenCount})`}
             <Chevron up={expanded} />
           </button>
