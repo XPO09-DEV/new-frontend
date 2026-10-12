@@ -70,6 +70,7 @@ export interface TokenAssetsWidgetProps {
   badge?: string | null;
   className?: string;
   onSelect?: (asset: TokenAsset) => void;
+  onConnectWallet?: () => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -255,7 +256,11 @@ const MAX_MULTICHAIN_SEARCH_CANDIDATES = 20;
 const MAX_MULTICHAIN_DETAILS_REQUESTS = 8;
 const MAX_MULTICHAIN_SEARCH_RESULTS = 48;
 
-async function fetchMarkets(
+const MARKET_CACHE_TTL = 90_000;
+const MARKET_PRICE_CACHE = new Map<string, { savedAt: number; data: Record<string, MarketInfo> }>();
+const MARKET_PRICE_INFLIGHT = new Map<string, Promise<Record<string, MarketInfo>>>();
+
+async function fetchMarketsUncached(
   base: string,
   headers: Record<string, string>,
   ids: string[],
@@ -282,6 +287,40 @@ async function fetchMarkets(
     }
   }
   return out;
+}
+
+async function fetchMarkets(
+  base: string,
+  headers: Record<string, string>,
+  ids: string[],
+  currency: string,
+  signal: AbortSignal,
+): Promise<Record<string, MarketInfo>> {
+  if (ids.length === 0) return {};
+  const stableIds = [...new Set(ids)].sort();
+  const key = `${base}|${currency}|${stableIds.join(",")}`;
+  const cached = MARKET_PRICE_CACHE.get(key);
+  if (cached && Date.now() - cached.savedAt < MARKET_CACHE_TTL) return cached.data;
+  const inFlight = MARKET_PRICE_INFLIGHT.get(key);
+  if (inFlight) return inFlight;
+
+  const request = fetchMarketsUncached(base, headers, stableIds, currency, signal);
+  MARKET_PRICE_INFLIGHT.set(key, request);
+  try {
+    const data = await request;
+    MARKET_PRICE_CACHE.set(key, { savedAt: Date.now(), data });
+    if (MARKET_PRICE_CACHE.size > 100) {
+      const oldestKey = MARKET_PRICE_CACHE.keys().next().value;
+      if (oldestKey) MARKET_PRICE_CACHE.delete(oldestKey);
+    }
+    return data;
+  } catch (error) {
+    if (signal.aborted) throw error;
+    if (cached) return cached.data;
+    throw error;
+  } finally {
+    if (MARKET_PRICE_INFLIGHT.get(key) === request) MARKET_PRICE_INFLIGHT.delete(key);
+  }
 }
 
 async function searchMultichainAssets(base: string, headers: Record<string, string>, query: string, signal: AbortSignal): Promise<SearchCoin[]> {
@@ -675,6 +714,7 @@ export default function TokenAssetsWidget({
   badge = "M",
   className = "",
   onSelect,
+  onConnectWallet,
 }: TokenAssetsWidgetProps) {
   const headers = useMemo<Record<string, string>>(() => (apiKey ? { [keyHeader]: apiKey } : {}), [apiKey, keyHeader]);
   const visibleHeld = visibleHeldProp ?? visibleTokens ?? 3;
@@ -727,6 +767,7 @@ export default function TokenAssetsWidget({
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchSelected, setSearchSelected] = useState<SearchCoin | null>(null);
   const [searchNetworkFilter, setSearchNetworkFilter] = useState<SearchNetworkFilter>("all");
+  const [searchRetry, setSearchRetry] = useState(0);
   const visibleSearchResults = useMemo(
     () => searchNetworkFilter === "all" ? searchResults : searchResults.filter((coin) => coin.networkId === searchNetworkFilter),
     [searchNetworkFilter, searchResults],
@@ -761,6 +802,7 @@ export default function TokenAssetsWidget({
   }, []);
 
   const previousCurrency = useRef(currency);
+  const lastMarketLoadAt = useRef(0);
   useEffect(() => {
     const ac = new AbortController();
     const currencyChanged = previousCurrency.current !== currency;
@@ -772,7 +814,9 @@ export default function TokenAssetsWidget({
       setStatus("loading");
     }
     const ids = idsKey.split(",").filter(Boolean);
-    const load = async () => {
+    const load = async (force = false) => {
+      if (!force && Date.now() - lastMarketLoadAt.current < refreshMs) return;
+      lastMarketLoadAt.current = Date.now();
       try {
         const m = await fetchMarkets(baseUrl, headers, ids, currency, ac.signal);
         if (ac.signal.aborted) return;
@@ -787,12 +831,12 @@ export default function TokenAssetsWidget({
       }
     };
     setStatus((s) => (s === "ready" ? s : "loading"));
-    load();
+    void load(true);
     const timer = window.setInterval(() => {
-      if (!document.hidden) load();
+      if (!document.hidden) void load();
     }, refreshMs);
     const onVis = () => {
-      if (!document.hidden) load();
+      if (!document.hidden) void load();
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {
@@ -980,7 +1024,7 @@ export default function TokenAssetsWidget({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [baseUrl, headers, searchOpen, searchQuery]);
+  }, [baseUrl, headers, searchOpen, searchQuery, searchRetry]);
 
   const stale = status === "ready" && !!error;
 
@@ -1203,7 +1247,7 @@ export default function TokenAssetsWidget({
                       {searchLoading ? (
                         <div className="ta-search-message search-loading-message"><span className="ta-search-spinner" />Searching indexed assets and verifying deployments…</div>
                       ) : searchError ? (
-                        <div className="ta-search-empty error"><strong>Search is temporarily unavailable</strong><span>{searchError}</span><button type="button" className="ta-search-retry" onClick={() => setSearchQuery((query) => `${query} `.trim())}>Try again</button></div>
+                        <div className="ta-search-empty error"><strong>Search is temporarily unavailable</strong><span>{searchError}</span><button type="button" className="ta-search-retry" onClick={() => setSearchRetry((retry) => retry + 1)}>Try again</button></div>
                       ) : visibleSearchResults.length === 0 ? (
                         <div className="ta-search-empty"><span className="ta-search-empty-icon">⌕</span><strong>{searchResults.length === 0 ? "No indexed assets found" : "No matches on this network"}</strong><span>{searchResults.length === 0 ? `No indexed native asset or verified token deployment matched “${searchQuery.trim()}”.` : "Choose another network or return to All networks."}</span></div>
                       ) : visibleSearchResults.map((coin) => (
@@ -1261,6 +1305,17 @@ export default function TokenAssetsWidget({
             </button>
           ))}
       </div>
+
+      {status === "ready" && allAssets.length === 0 && !selectedSearchAsset && (
+        <div className="ta-no-wallet-assets">
+          <span className="ta-no-wallet-assets-icon">◈</span>
+          <strong>{walletConnected ? "No indexed token balances found" : "Connect your wallet to see your coins"}</strong>
+          <span>{walletConnected
+            ? "No supported positive balances were returned for this address. New tokens appear here when the indexer recognises their network and contract."
+            : "Your Token Assets list stays empty until a wallet is connected. Search remains available for market discovery."}</span>
+          {!walletConnected && onConnectWallet && <button type="button" onClick={() => { triggerHaptic(); onConnectWallet(); }}>Connect wallet</button>}
+        </div>
+      )}
 
       {status === "ready" && allAssets.length > visibleHeld && (
         <div className="ta-more-wrap">
