@@ -17,10 +17,18 @@ export interface PinnedToken {
   name: string;
 }
 
-/** What the user owns. `id` is the CoinGecko id of the token. */
+/** A wallet holding can be a CoinGecko ID or a chain-qualified Ankr asset. */
 export interface Holding {
   id: string;
   amount: number;
+  symbol?: string;
+  name?: string;
+  image?: string | null;
+  price?: number | null;
+  valueUsd?: number | null;
+  network?: string;
+  contractAddress?: string | null;
+  marketId?: string;
 }
 
 export interface TokenAsset {
@@ -31,9 +39,12 @@ export interface TokenAsset {
   price: number | null;
   pct24: number | null;
   amount: number;
-  /** amount Ã— price */
+  /** amount × price */
   value: number;
   pinned: boolean;
+  network?: string;
+  contractAddress?: string | null;
+  chartId?: string;
 }
 
 export interface TokenAssetsWidgetProps {
@@ -194,7 +205,7 @@ interface MarketInfo {
   pct24: number | null;
 }
 
-type SearchNetworkId = "bitcoin" | "ethereum" | "bnb" | "solana" | "monad";
+type SearchNetworkId = "bitcoin" | "ethereum" | "bnb" | "polygon" | "arbitrum" | "optimism" | "base" | "avalanche" | "solana" | "monad" | "tron" | "ton" | "xrp";
 type SearchNetworkFilter = "all" | SearchNetworkId;
 
 interface SearchCoin {
@@ -223,22 +234,26 @@ const SEARCH_NETWORKS: { id: SearchNetworkId; label: string; platformAliases: st
   { id: "bitcoin", label: "Bitcoin", platformAliases: [], nativeCoinIds: ["bitcoin"] },
   { id: "ethereum", label: "Ethereum", platformAliases: ["ethereum"], nativeCoinIds: ["ethereum"] },
   { id: "bnb", label: "BNB Chain", platformAliases: ["binance-smart-chain", "bnb-smart-chain", "bnb-chain"], nativeCoinIds: ["binancecoin"] },
+  { id: "polygon", label: "Polygon", platformAliases: ["polygon-pos", "polygon"], nativeCoinIds: ["matic-network", "polygon-ecosystem-token"] },
+  { id: "arbitrum", label: "Arbitrum", platformAliases: ["arbitrum-one", "arbitrum"], nativeCoinIds: ["arbitrum"] },
+  { id: "optimism", label: "Optimism", platformAliases: ["optimistic-ethereum", "optimism"], nativeCoinIds: ["optimism"] },
+  { id: "base", label: "Base", platformAliases: ["base"], nativeCoinIds: [] },
+  { id: "avalanche", label: "Avalanche", platformAliases: ["avalanche", "avalanche-x"], nativeCoinIds: ["avalanche-2"] },
   { id: "solana", label: "Solana", platformAliases: ["solana"], nativeCoinIds: ["solana"] },
   { id: "monad", label: "Monad", platformAliases: ["monad", "monad-mainnet"], nativeCoinIds: ["monad"] },
+  { id: "tron", label: "TRON", platformAliases: ["tron"], nativeCoinIds: ["tron"] },
+  { id: "ton", label: "TON", platformAliases: ["the-open-network", "ton"], nativeCoinIds: ["the-open-network"] },
+  { id: "xrp", label: "XRP Ledger", platformAliases: [], nativeCoinIds: ["ripple"] },
 ];
 const SEARCH_NETWORK_FILTERS: { id: SearchNetworkFilter; label: string }[] = [
   { id: "all", label: "All networks" },
-  { id: "bitcoin", label: "Bitcoin" },
-  { id: "ethereum", label: "Ethereum" },
-  { id: "bnb", label: "BNB Chain" },
-  { id: "solana", label: "Solana" },
-  { id: "monad", label: "Monad" },
+  ...SEARCH_NETWORKS.map(({ id, label }) => ({ id, label })),
 ];
 const MULTICHAIN_SEARCH_CACHE = new Map<string, SearchCoin[]>();
 const SEARCH_DETAILS_CACHE = new Map<string, SearchCoinDetails>();
-const MAX_MULTICHAIN_SEARCH_CANDIDATES = 14;
-const MAX_MULTICHAIN_DETAILS_REQUESTS = 10;
-const MAX_MULTICHAIN_SEARCH_RESULTS = 36;
+const MAX_MULTICHAIN_SEARCH_CANDIDATES = 20;
+const MAX_MULTICHAIN_DETAILS_REQUESTS = 8;
+const MAX_MULTICHAIN_SEARCH_RESULTS = 48;
 
 async function fetchMarkets(
   base: string,
@@ -248,6 +263,7 @@ async function fetchMarkets(
   signal: AbortSignal,
 ): Promise<Record<string, MarketInfo>> {
   const out: Record<string, MarketInfo> = {};
+  if (ids.length === 0) return out;
   for (let i = 0; i < ids.length; i += 200) {
     const chunk = ids.slice(i, i + 200);
     const rows = await getJSON<RawMarket[]>(
@@ -341,7 +357,10 @@ async function searchMultichainAssets(base: string, headers: Record<string, stri
     }
   }
 
-  const networkOrder: Record<SearchNetworkId, number> = { bitcoin: 0, ethereum: 1, bnb: 2, solana: 3, monad: 4 };
+  const networkOrder: Record<SearchNetworkId, number> = {
+    bitcoin: 0, ethereum: 1, bnb: 2, polygon: 3, arbitrum: 4, optimism: 5,
+    base: 6, avalanche: 7, solana: 8, monad: 9, tron: 10, ton: 11, xrp: 12,
+  };
   results.sort((a, b) => {
     const aRank = candidates.findIndex((coin) => coin.id === a.id);
     const bRank = candidates.findIndex((coin) => coin.id === b.id);
@@ -353,19 +372,42 @@ async function searchMultichainAssets(base: string, headers: Record<string, stri
   return limited;
 }
 
-async function fetchChart(
-  base: string,
-  headers: Record<string, string>,
-  id: string,
-  currency: string,
-  days: number | "max",
-): Promise<Point[]> {
-  const d = await getJSON<{ prices: Point[] }>(
-    `${base}/coins/${encodeURIComponent(id)}/market_chart?vs_currency=${currency}&days=${days}`,
-    headers,
-  );
-  if (!d.prices?.length) throw new HttpError(404);
-  return d.prices;
+interface CachedChartHistory {
+  points: Point[];
+  fetchedAt: number;
+}
+const CHART_HISTORY_CACHE = new Map<string, CachedChartHistory>();
+
+function chartCacheTtl(days: number | "max"): number {
+  if (days === 1) return 60_000;
+  if (days === 7) return 4 * 60_000;
+  if (days === 30) return 8 * 60_000;
+  if (days === 90) return 15 * 60_000;
+  return 30 * 60_000;
+}
+
+async function fetchChart(base: string, headers: Record<string, string>, id: string, currency: string, days: number | "max", signal?: AbortSignal): Promise<Point[]> {
+  const cacheKey = `${base}|${id}|${currency}|${days}`;
+  const cached = CHART_HISTORY_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < chartCacheTtl(days)) return cached.points;
+  try {
+    const data = await getJSON<{ prices: Point[] }>(
+      `${base}/coins/${encodeURIComponent(id)}/market_chart?vs_currency=${currency}&days=${days}`,
+      headers,
+      signal,
+    );
+    if (!data.prices?.length) throw new HttpError(404);
+    CHART_HISTORY_CACHE.set(cacheKey, { points: data.prices, fetchedAt: Date.now() });
+    if (CHART_HISTORY_CACHE.size > 180) {
+      const oldestKey = CHART_HISTORY_CACHE.keys().next().value;
+      if (oldestKey) CHART_HISTORY_CACHE.delete(oldestKey);
+    }
+    return data.prices;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    if (cached) return cached.points;
+    throw error;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -626,7 +668,7 @@ export default function TokenAssetsWidget({
   baseUrl = "https://api.coingecko.com/api/v3",
   keyHeader = "x-cg-demo-api-key",
   currency: currencyProp,
-  refreshMs = 30000,
+  refreshMs = 120000,
   defaultTimeframe = "1D",
   visibleHeld: visibleHeldProp,
   visibleTokens,
@@ -690,7 +732,7 @@ export default function TokenAssetsWidget({
     [searchNetworkFilter, searchResults],
   );
   const searchNetworkCounts = useMemo(() => {
-    const counts: Record<SearchNetworkFilter, number> = { all: searchResults.length, bitcoin: 0, ethereum: 0, bnb: 0, solana: 0, monad: 0 };
+    const counts: Record<SearchNetworkFilter, number> = { all: searchResults.length, bitcoin: 0, ethereum: 0, bnb: 0, polygon: 0, arbitrum: 0, optimism: 0, base: 0, avalanche: 0, solana: 0, monad: 0, tron: 0, ton: 0, xrp: 0 };
     searchResults.forEach((coin) => { counts[coin.networkId] += 1; });
     return counts;
   }, [searchResults]);
@@ -698,7 +740,11 @@ export default function TokenAssetsWidget({
 
   /* ---- ids we need prices for ---- */
   const idsKey = useMemo(
-    () => Array.from(new Set([...pinned.map((p) => p.id), ...holdings.map((h) => h.id), ...(searchSelected ? [searchSelected.id] : [])])).join(","),
+    () => Array.from(new Set([
+      ...pinned.map((p) => p.id),
+      ...holdings.map((holding) => holding.marketId).filter((id): id is string => Boolean(id)),
+      ...(searchSelected ? [searchSelected.id] : []),
+    ])).join(","),
     [pinned, holdings, searchSelected?.id],
   );
 
@@ -759,22 +805,31 @@ export default function TokenAssetsWidget({
   /* ---- build the asset rows ---- */
   const { pinnedAssets, heldAssets, total } = useMemo(() => {
     const amounts = new Map<string, number>();
-    holdings.forEach((h) => amounts.set(h.id, (amounts.get(h.id) ?? 0) + (h.amount || 0)));
+    const holdingById = new Map<string, Holding>();
+    holdings.forEach((holding) => {
+      amounts.set(holding.id, (amounts.get(holding.id) ?? 0) + (holding.amount || 0));
+      holdingById.set(holding.id, holding);
+    });
     const pinnedIds = new Set(pinned.map((p) => p.id));
     const build = (id: string, symbol: string, name: string, isPinned: boolean): TokenAsset => {
       const m = market[id];
-      const price = m?.price ?? null;
+      const holding = holdingById.get(id);
+      const price = m?.price ?? holding?.price ?? null;
       const amount = amounts.get(id) ?? 0;
+      const value = holding?.valueUsd ?? (price != null ? amount * price : 0);
       return {
         id,
-        symbol: m?.symbol || symbol,
-        name: m?.name || name,
-        image: m?.image ?? null,
+        symbol: m?.symbol || holding?.symbol || symbol,
+        name: m?.name || holding?.name || name,
+        image: m?.image ?? holding?.image ?? null,
         price,
         pct24: m?.pct24 ?? null,
         amount,
-        value: price != null ? amount * price : 0,
+        value: Number.isFinite(value) ? value : 0,
         pinned: isPinned,
+        network: holding?.network,
+        contractAddress: holding?.contractAddress ?? null,
+        chartId: holding?.marketId,
       };
     };
     const pinnedAssets = pinned.map((p) => build(p.id, p.symbol, p.name, true));
@@ -803,6 +858,9 @@ export default function TokenAssetsWidget({
     amount: 0,
     value: 0,
     pinned: false,
+    network: searchSelected.networkLabel,
+    contractAddress: searchSelected.contractAddress ?? null,
+    chartId: searchSelected.id,
   } : null;
   const selected = allAssets.find((a) => a.id === selectedId) ?? selectedSearchAsset ?? allAssets[0] ?? null;
   const selectedIsSearchPreview = !!selected && !allAssets.some((asset) => asset.id === selected.id);
@@ -817,7 +875,7 @@ export default function TokenAssetsWidget({
   const ensureChart = useCallback(
     async (id: string, t: Timeframe) => {
       const key = `${id}:${t}:${currency}`;
-      const ttl = t === "1D" ? 60_000 : 300_000;
+      const ttl = t === "1D" ? 60_000 : t === "1W" ? 240_000 : t === "1M" ? 480_000 : 600_000;
       if (inflight.current.has(key)) return;
       if (fetchedAt.current[key] && Date.now() - fetchedAt.current[key] < ttl) return;
       inflight.current.add(key);
@@ -827,7 +885,7 @@ export default function TokenAssetsWidget({
           pts = await fetchChart(baseUrl, headers, id, currency, DAYS[t]);
         } catch (e) {
           if (t !== "All") throw e;
-          pts = await fetchChart(baseUrl, headers, id, currency, 365); // plan without full history
+          pts = await fetchChart(baseUrl, headers, id, currency, 365);
           setLimitedAll(true);
         }
         fetchedAt.current[key] = Date.now();
@@ -841,17 +899,29 @@ export default function TokenAssetsWidget({
 
   const selId = selected?.id;
   useEffect(() => {
-    if (!selId) return;
+    if (!selId) {
+      setChartErr(null);
+      return;
+    }
     let alive = true;
+    const chartId = selected?.chartId ?? selected?.id ?? "";
+    if (!chartId || (selected?.id.includes(":") && !selected.chartId)) {
+      setChartErr("Historical price history isn't available for this indexed wallet asset yet. Its current balance remains available.");
+      return () => { alive = false; };
+    }
     setChartErr(null);
-    ensureChart(selId, tf).catch((e) => alive && setChartErr(errMsg(e)));
-    return () => {
-      alive = false;
-    };
-  }, [selId, tf, ensureChart, updatedAt]);
+    ensureChart(chartId, tf).catch((error) => {
+      if (!alive) return;
+      setChartErr(error instanceof HttpError && error.status === 429
+        ? "Historical prices are temporarily rate-limited. Please retry shortly; spot prices continue updating."
+        : "Historical price history is temporarily unavailable. Please retry in a moment.");
+    });
+    return () => { alive = false; };
+  }, [selId, tf, ensureChart, updatedAt, selected?.chartId]);
 
   /* ---- chart view model ---- */
-  const base = selected ? charts[`${selected.id}:${tf}:${currency}`] : undefined;
+  const chartDataId = selected?.chartId ?? selected?.id;
+  const base = chartDataId ? charts[`${chartDataId}:${tf}:${currency}`] : undefined;
   const view = useMemo<Point[] | null>(() => {
     if (!base || !selected) return null;
     if (selected.price == null) return thin(base);
@@ -877,10 +947,7 @@ export default function TokenAssetsWidget({
     setSearchSelected(coin);
     setSelectedId(coin.id);
     setHover(null);
-    setSearchOpen(false);
-    setSearchQuery("");
-    setSearchResults([]);
-    setSearchNetworkFilter("all");
+    setChartErr(null);
     const existing = allAssets.find((asset) => asset.id === coin.id);
     if (existing) onSelect?.(existing);
   };
@@ -1056,25 +1123,12 @@ export default function TokenAssetsWidget({
             {status === "loading" ? "—" : walletConnected ? fmtMoney(total, currency, "value") : "—"}
           </b>
           <div className={`ta-search ${searchOpen ? "is-open" : ""}`}>
-            {searchOpen && (
-              <input className="ta-search-input" type="search" value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    setSearchOpen(false); setSearchQuery(""); setSearchResults([]); setSearchNetworkFilter("all");
-                  }
-                }}
-                placeholder="Search any coin or symbol" aria-label="Search assets across supported blockchains" autoFocus />
-            )}
             <button type="button" className="ta-search-trigger"
-              aria-label={searchOpen ? "Close asset search" : "Search all supported blockchains"} aria-expanded={searchOpen}
+              aria-label={searchOpen ? "Close multichain search" : "Search any coin on supported blockchains"} aria-expanded={searchOpen}
               onClick={() => {
                 triggerHaptic();
-                if (searchOpen) {
-                  setSearchOpen(false); setSearchQuery(""); setSearchResults([]); setSearchNetworkFilter("all");
-                } else {
-                  setSearchNetworkFilter("all"); setSearchOpen(true);
-                }
+                if (searchOpen) { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); setSearchNetworkFilter("all"); }
+                else { setSearchQuery(""); setSearchResults([]); setSearchNetworkFilter("all"); setSearchOpen(true); }
               }}>
               {searchOpen ? (
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" /></svg>
@@ -1082,57 +1136,88 @@ export default function TokenAssetsWidget({
                 <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4 4" /></svg>
               )}
             </button>
-            {searchOpen && searchQuery.trim().length >= 2 && (
-              <div className="ta-search-results" role="dialog" aria-label="Multichain asset search results">
-                <div className="ta-search-results-head">
-                  <div>
-                    <strong>Search results</strong>
-                    <span>Verified assets across supported networks</span>
-                  </div>
-                  <span className="ta-search-count">{searchLoading ? "Searching" : `${searchResults.length} found`}</span>
-                </div>
-                <div className="ta-search-filters" role="tablist" aria-label="Filter results by blockchain">
-                  {SEARCH_NETWORK_FILTERS.map((filter) => (
-                    <button key={filter.id} type="button" role="tab"
-                      aria-selected={searchNetworkFilter === filter.id}
-                      className={searchNetworkFilter === filter.id ? "ta-search-filter on" : "ta-search-filter"}
-                      onClick={() => { triggerHaptic(5); setSearchNetworkFilter(filter.id); }}>
-                      {filter.label}
-                      <span>{searchNetworkCounts[filter.id]}</span>
+            {searchOpen && (
+              <div className="ta-search-page-backdrop" role="presentation" onClick={() => setSearchOpen(false)}>
+                <section className="ta-search-page" role="dialog" aria-modal="true" aria-label="Multichain asset search" onClick={(event) => event.stopPropagation()}>
+                  <header className="ta-search-page-header">
+                    <button type="button" className="ta-search-back" onClick={() => setSearchOpen(false)} aria-label="Back to token assets">
+                      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6M9 12h12" /></svg>
                     </button>
-                  ))}
-                </div>
-                <div className="ta-search-result-list" role="listbox" aria-label="Verified assets">
-                  {searchLoading ? (
-                    <div className="ta-search-message search-loading-message"><span className="ta-search-spinner" />Searching assets and verifying network deployments…</div>
-                  ) : searchError ? (
-                    <div className="ta-search-message error">{searchError}<small>Check your connection or try again shortly.</small></div>
-                  ) : visibleSearchResults.length === 0 ? (
-                    <div className="ta-search-empty">
-                      <span className="ta-search-empty-icon">⌕</span>
-                      <strong>{searchResults.length === 0 ? "No verified assets found" : "No results on this network"}</strong>
-                      <span>{searchResults.length === 0
-                        ? `No supported native asset or verified token deployment matched “${searchQuery.trim()}”.`
-                        : `Try another network or choose All networks to see the verified matches for “${searchQuery.trim()}”.`}</span>
+                    <div className="ta-search-page-title"><span>SUBTLE PAY · MARKET DISCOVERY</span><strong>Search assets</strong></div>
+                    <button type="button" className="ta-search-page-close" onClick={() => setSearchOpen(false)} aria-label="Close search">
+                      <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="m5 5 10 10M15 5 5 15" /></svg>
+                    </button>
+                  </header>
+
+                  <label className="ta-search-page-field">
+                    <svg viewBox="0 0 20 20" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="8.5" cy="8.5" r="5.5" /><path d="m13 13 4 4" /></svg>
+                    <input type="search" value={searchQuery}
+                      onChange={(event) => { setSearchQuery(event.target.value); setSearchSelected(null); }}
+                      onKeyDown={(event) => { if (event.key === "Escape") { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); setSearchNetworkFilter("all"); } }}
+                      placeholder="Search any coin, ticker, or asset name" aria-label="Search any coin across supported blockchains" autoFocus />
+                    {searchQuery && <button type="button" onClick={() => { setSearchQuery(""); setSearchResults([]); setSearchSelected(null); }} aria-label="Clear search">Clear</button>}
+                  </label>
+
+                  <div className="ta-search-page-helper"><span>SEARCH ACROSS NETWORKS</span><small>Native coins and indexed token deployments</small></div>
+
+                  {searchQuery.trim().length >= 2 && (
+                    <div className="ta-search-filters" role="tablist" aria-label="Filter results by blockchain">
+                      {SEARCH_NETWORK_FILTERS.map((filter) => (
+                        <button key={filter.id} type="button" role="tab" aria-selected={searchNetworkFilter === filter.id}
+                          className={searchNetworkFilter === filter.id ? "ta-search-filter on" : "ta-search-filter"}
+                          onClick={() => { triggerHaptic(5); setSearchNetworkFilter(filter.id); }}>
+                          {filter.label}<span>{searchNetworkCounts[filter.id]}</span>
+                        </button>
+                      ))}
                     </div>
-                  ) : visibleSearchResults.map((coin) => (
-                    <button key={coin.resultKey} type="button" role="option"
-                      aria-selected={coin.id === selected?.id && searchSelected?.networkId === coin.networkId}
-                      className="ta-search-result" onClick={() => chooseSearchToken(coin)}>
-                      <Logo src={coin.thumb ?? null} symbol={coin.symbol.toUpperCase()} size={38} />
-                      <span className="ta-search-result-copy">
-                        <b>{coin.name}</b>
-                        <small>{coin.symbol.toUpperCase()} <span className="ta-search-dot">·</span> {coin.assetKind}</small>
-                        <small className="ta-search-address" title={coin.contractAddress ?? "Native asset"}>
-                          {coin.contractAddress ? `${coin.contractAddress.slice(0, 7)}…${coin.contractAddress.slice(-5)}` : "Native asset"}
-                        </small>
-                      </span>
-                      <span className={`ta-search-network-badge ${coin.networkId}`}>{coin.networkLabel}</span>
-                      <span className="ta-search-result-view" aria-hidden="true">↗</span>
-                    </button>
-                  ))}
-                </div>
-                <div className="ta-search-results-foot">Only native assets and network deployments with a listed contract address are shown.</div>
+                  )}
+
+                  {searchSelected && selected && (
+                    <section className="ta-search-preview" aria-label={`${selected.name} selected asset details`}>
+                      <div className="ta-search-preview-header">
+                        <Logo src={selected.image} symbol={selected.symbol} size={42} />
+                        <div className="ta-search-preview-title"><strong>{selected.name}</strong><span>{selected.symbol.toUpperCase()} · {searchSelected.networkLabel} · {searchSelected.assetKind}</span></div>
+                        <button type="button" className="ta-search-preview-dismiss" onClick={() => { setSearchSelected(null); setSelectedId(""); setChartErr(null); }}>Hide details</button>
+                      </div>
+                      <div className="ta-search-preview-price">
+                        <strong>{fmtMoney(selected.price, currency, "price")}</strong>
+                        {deltaPct != null && <span className={deltaPct < 0 ? "ta-search-change down" : "ta-search-change up"}>{deltaPct < 0 ? "−" : "+"}{Math.abs(deltaPct).toFixed(2)}%</span>}
+                      </div>
+                      <div className="ta-search-preview-network"><span>{searchSelected.contractAddress ? "TOKEN CONTRACT" : "ASSET TYPE"}</span><code title={searchSelected.contractAddress ?? "Native coin"}>{searchSelected.contractAddress ?? "Native coin — no token contract"}</code></div>
+                      <div className="ta-search-preview-tfs" role="tablist" aria-label="Chart timeframe">
+                        {TFS.map((frame) => <button key={frame} type="button" role="tab" aria-selected={tf === frame} className={tf === frame ? "on" : ""} onClick={() => { triggerHaptic(5); setTf(frame); setHover(null); }}>{frame}</button>)}
+                      </div>
+                      <Chart pts={view} tf={tf} error={chartErr} hover={hover} onHover={setHover} animKey={`${selected.id}:${tf}:search`} currency={currency} />
+                    </section>
+                  )}
+
+                  {searchQuery.trim().length < 2 ? (
+                    <div className="ta-search-welcome">
+                      <span className="ta-search-welcome-icon">⌕</span><strong>Find a coin across chains</strong>
+                      <p>Try Bitcoin, BTC, USDC, ETH, or a token name. Results show the network and contract when indexed.</p>
+                      <div className="ta-search-suggestions">{["Bitcoin", "USDC", "ETH", "Monad"].map((term) => <button key={term} type="button" onClick={() => setSearchQuery(term)}>{term}<span>↗</span></button>)}</div>
+                    </div>
+                  ) : (
+                    <div className="ta-search-page-results" role="listbox" aria-label="Multichain asset results" aria-busy={searchLoading}>
+                      <div className="ta-search-results-head"><div><strong>Matches</strong><span>Only indexed assets with a known network deployment</span></div><span className="ta-search-count">{searchLoading ? "Searching…" : `${visibleSearchResults.length} shown`}</span></div>
+                      {searchLoading ? (
+                        <div className="ta-search-message search-loading-message"><span className="ta-search-spinner" />Searching indexed assets and verifying deployments…</div>
+                      ) : searchError ? (
+                        <div className="ta-search-empty error"><strong>Search is temporarily unavailable</strong><span>{searchError}</span><button type="button" className="ta-search-retry" onClick={() => setSearchQuery((query) => `${query} `.trim())}>Try again</button></div>
+                      ) : visibleSearchResults.length === 0 ? (
+                        <div className="ta-search-empty"><span className="ta-search-empty-icon">⌕</span><strong>{searchResults.length === 0 ? "No indexed assets found" : "No matches on this network"}</strong><span>{searchResults.length === 0 ? `No indexed native asset or verified token deployment matched “${searchQuery.trim()}”.` : "Choose another network or return to All networks."}</span></div>
+                      ) : visibleSearchResults.map((coin) => (
+                        <button key={coin.resultKey} type="button" role="option" aria-selected={coin.resultKey === searchSelected?.resultKey}
+                          className="ta-search-result" onClick={() => chooseSearchToken(coin)}>
+                          <Logo src={coin.thumb ?? null} symbol={coin.symbol.toUpperCase()} size={42} />
+                          <span className="ta-search-result-copy"><b>{coin.name}</b><small>{coin.symbol.toUpperCase()} <span className="ta-search-dot">·</span> {coin.assetKind}</small><small className="ta-search-address" title={coin.contractAddress ?? "Native asset"}>{coin.contractAddress ? `${coin.contractAddress.slice(0, 8)}…${coin.contractAddress.slice(-5)}` : "Native asset · no contract"}</small></span>
+                          <span className={`ta-search-network-badge ${coin.networkId}`}>{coin.networkLabel}</span><span className="ta-search-result-view" aria-hidden="true">↗</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <footer className="ta-search-page-footer">Search covers indexed assets, not every contract ever deployed. Verify the network and full contract before sending funds.</footer>
+                </section>
               </div>
             )}
           </div>
