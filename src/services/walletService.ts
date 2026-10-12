@@ -25,6 +25,8 @@ export interface WalletAsset {
   tokenName: string;
   tokenSymbol: string;
   balance: number;
+  /** Raw base-unit balance, stored as a decimal bigint string when the provider supplies it. */
+  balanceRawInteger?: string;
   balanceUsd: number | null;
   priceUsd: number | null;
   tokenDecimals: number;
@@ -51,6 +53,7 @@ interface AnkrAssetResponse {
   tokenName?: string;
   tokenSymbol?: string;
   balance?: string;
+  balanceRawInteger?: string;
   balanceUsd?: string;
   tokenPrice?: string;
   tokenDecimals?: number;
@@ -174,6 +177,7 @@ function normalizeAnkrAsset(asset: AnkrAssetResponse): WalletAsset | null {
     tokenName,
     tokenSymbol,
     balance,
+    balanceRawInteger: asset.balanceRawInteger && /^\d+$/.test(asset.balanceRawInteger) ? asset.balanceRawInteger : undefined,
     balanceUsd: finiteNumber(asset.balanceUsd),
     priceUsd: finiteNumber(asset.tokenPrice),
     tokenDecimals: Math.max(0, Math.min(36, Math.trunc(finiteNumber(asset.tokenDecimals) ?? 18))),
@@ -208,6 +212,7 @@ async function fetchMonadNativeBalance(address: string): Promise<WalletAsset | n
     tokenName: "Monad",
     tokenSymbol: "MON",
     balance: amount,
+    balanceRawInteger: (BigInt(payload.result)).toString(),
     balanceUsd: null,
     priceUsd: null,
     tokenDecimals: 18,
@@ -311,4 +316,130 @@ export function getChainIdFromNetwork(id: string): string | null {
 
 export function isSameNetwork(sourceChainId: string | null | undefined, destinationChainId: string | null | undefined): boolean {
   return !!sourceChainId && !!destinationChainId && sourceChainId.toLowerCase() === destinationChainId.toLowerCase();
+}
+
+
+function chainForAsset(asset: WalletAsset) {
+  return SUPPORTED_EVM_NETWORKS.find((network) => network.ankrName === asset.blockchain);
+}
+
+function amountToBaseUnits(value: string, decimals: number): bigint {
+  const input = value.trim();
+  if (!/^(?:\d+)(?:\.\d*)?$/.test(input)) throw new Error("Enter a valid positive amount.");
+  const [whole, fraction = ""] = input.split(".");
+  if (fraction.length > decimals) throw new Error(`This token supports at most ${decimals} decimal places.`);
+  const scaled = `${whole}${fraction.padEnd(decimals, "0")}`.replace(/^0+(?=\d)/, "");
+  return BigInt(scaled || "0");
+}
+
+function toHex(value: bigint): string {
+  return `0x${value.toString(16)}`;
+}
+
+function rawBalance(asset: WalletAsset): bigint | null {
+  if (asset.balanceRawInteger && /^\d+$/.test(asset.balanceRawInteger)) {
+    try { return BigInt(asset.balanceRawInteger); } catch { return null; }
+  }
+  // Fallback only for providers that omit the raw quantity; UI balances can be rounded.
+  try { return amountToBaseUnits(String(asset.balance), asset.tokenDecimals); } catch { return null; }
+}
+
+export interface SendTransactionRequest {
+  walletAddress: string;
+  recipient: string;
+  asset: WalletAsset;
+  amount: string;
+}
+
+/**
+ * Sends a native coin or standard ERC-20 token only on the selected asset's own EVM chain.
+ * The injected wallet must display and approve the transaction; this app never handles keys.
+ * Cross-chain transfers are deliberately not simulated as direct sends.
+ */
+export async function sendEvmAssetTransaction(request: SendTransactionRequest): Promise<string> {
+  const { walletAddress, recipient, asset, amount } = request;
+  if (!isValidEvmAddress(walletAddress)) throw new Error("Connect a valid EVM wallet before sending.");
+  if (!isValidEvmAddress(recipient)) throw new Error("Enter a valid 0x wallet address. Account handles need the account directory backend.");
+  if (walletAddress.toLowerCase() === recipient.toLowerCase()) throw new Error("Choose a different recipient address.");
+  const network = chainForAsset(asset);
+  if (!network) throw new Error(`Sending from ${asset.chainLabel} is not supported yet. No transaction has been sent.`);
+  const units = amountToBaseUnits(amount, asset.tokenDecimals);
+  if (units <= 0n) throw new Error("Amount must be greater than zero.");
+  const holdingRawBalance = rawBalance(asset);
+  if (holdingRawBalance == null || units > holdingRawBalance) throw new Error("Amount exceeds the indexed wallet balance. Refresh your assets before sending.");
+
+  const provider = requireProvider();
+  const accountsValue = await provider.request({ method: "eth_accounts" });
+  const accounts = Array.isArray(accountsValue) ? accountsValue : [];
+  const activeAddress = typeof accounts[0] === "string" ? accounts[0] : "";
+  if (!activeAddress || activeAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+    throw new Error("The active wallet account changed. Reconnect and review the recipient again.");
+  }
+
+  const chainValue = await provider.request({ method: "eth_chainId" });
+  const activeChainId = typeof chainValue === "string" ? chainValue.toLowerCase() : "";
+  if (activeChainId !== network.chainId) {
+    try {
+      await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: network.chainId }] });
+    } catch (error) {
+      const code = (error as { code?: number })?.code;
+      if (code === 4001) throw new Error("Network switch was rejected. No transaction was sent.");
+      throw new Error(`Switch your wallet to ${network.label} manually, then retry. No transaction was sent.`);
+    }
+    const switchedChain = await provider.request({ method: "eth_chainId" });
+    if (typeof switchedChain !== "string" || switchedChain.toLowerCase() !== network.chainId) {
+      throw new Error(`Your wallet is not on ${network.label}. No transaction was sent.`);
+    }
+  }
+
+  const nativeAsset = asset.contractAddress
+    ? null
+    : asset;
+  const tx: Record<string, string> = { from: walletAddress, to: asset.contractAddress ?? recipient };
+  if (asset.contractAddress) {
+    const recipientWord = recipient.slice(2).toLowerCase().padStart(64, "0");
+    const amountWord = units.toString(16).padStart(64, "0");
+    tx.data = `0xa9059cbb${recipientWord}${amountWord}`;
+    tx.value = "0x0";
+  } else {
+    tx.value = toHex(units);
+  }
+
+  const [estimateValue, gasPriceValue, nativeBalanceValue] = await Promise.all([
+    provider.request({ method: "eth_estimateGas", params: [tx] }),
+    provider.request({ method: "eth_gasPrice" }),
+    provider.request({ method: "eth_getBalance", params: [walletAddress, "latest"] }),
+  ]);
+  if (typeof estimateValue !== "string" || typeof gasPriceValue !== "string" || typeof nativeBalanceValue !== "string") {
+    throw new Error("The wallet couldn't estimate network fees. No transaction was sent.");
+  }
+  let gasLimit: bigint;
+  let gasPrice: bigint;
+  let nativeBalance: bigint;
+  try {
+    gasLimit = (BigInt(estimateValue) * 120n + 99n) / 100n;
+    gasPrice = BigInt(gasPriceValue);
+    nativeBalance = BigInt(nativeBalanceValue);
+  } catch {
+    throw new Error("The wallet returned invalid network fee data. No transaction was sent.");
+  }
+  const estimatedFee = gasLimit * gasPrice;
+  const requiredNative = asset.contractAddress ? estimatedFee : units + estimatedFee;
+  if (nativeBalance < requiredNative) {
+    throw new Error(`Not enough ${network.label} native coin to cover the amount and estimated gas fees. No transaction was sent.`);
+  }
+  tx.gas = toHex(gasLimit);
+  tx.gasPrice = toHex(gasPrice);
+
+  try {
+    const result = await provider.request({ method: "eth_sendTransaction", params: [tx] });
+    if (typeof result !== "string" || !/^0x[a-fA-F0-9]{64}$/.test(result)) {
+      throw new Error("The wallet did not return a valid transaction hash.");
+    }
+    return result;
+  } catch (error) {
+    const code = (error as { code?: number })?.code;
+    if (code === 4001) throw new Error("You rejected the transaction in your wallet. No funds were sent.");
+    throw error instanceof Error ? error : new Error("The wallet could not submit this transaction.");
+  }
 }
