@@ -34,8 +34,23 @@ function readRestorablePage(): PageId {
   }
 }
 
-function readSavedName() {
+function walletNameKey(address: string) {
+  return `subtlePayWalletName:${address.toLowerCase()}`;
+}
+
+function readSavedName(address?: string | null) {
   try {
+    if (address) {
+      const key = walletNameKey(address);
+      const scoped = window.localStorage.getItem(key);
+      if (scoped !== null) return scoped.trim();
+
+      // Migrate an older single-device name to the first wallet it is associated with.
+      const legacy = window.localStorage.getItem("subtlePayUserName")?.trim() ?? "";
+      window.localStorage.setItem(key, legacy);
+      window.localStorage.removeItem("subtlePayUserName");
+      return legacy;
+    }
     return window.localStorage.getItem("subtlePayUserName")?.trim() ?? "";
   } catch {
     return "";
@@ -191,7 +206,8 @@ export default function App() {
   }, [walletAddress]);
 
   useEffect(() => {
-    const syncDisplayName = () => setDisplayName(readSavedName());
+    const syncDisplayName = () => setDisplayName(readSavedName(walletAddress));
+    syncDisplayName();
     const syncNotice = (event: Event) => {
       const message = (event as CustomEvent<string>).detail;
       if (message) {
@@ -208,7 +224,7 @@ export default function App() {
       window.removeEventListener("subtlepay:username", syncDisplayName);
       window.removeEventListener("subtlepay:notice", syncNotice);
     };
-  }, []);
+  }, [walletAddress]);
 
   useEffect(() => {
     if (!resumeConsent) return;
@@ -223,8 +239,15 @@ export default function App() {
   function saveDisplayName(value: string) {
     const cleaned = value.trim().slice(0, 80);
     try {
-      if (cleaned) window.localStorage.setItem("subtlePayUserName", cleaned);
-      else window.localStorage.removeItem("subtlePayUserName");
+      if (walletAddress) {
+        // This local display label is tied to the connected address on this device.
+        // Global handle ownership/search still belongs in the backend account directory.
+        window.localStorage.setItem(walletNameKey(walletAddress), cleaned);
+      } else if (cleaned) {
+        window.localStorage.setItem("subtlePayUserName", cleaned);
+      } else {
+        window.localStorage.removeItem("subtlePayUserName");
+      }
     } catch {
       // The name can still be changed for this session.
     }
