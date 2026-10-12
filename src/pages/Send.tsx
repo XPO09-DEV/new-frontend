@@ -1,195 +1,147 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Icon from "../components/Icon";
-import type { WalletAsset } from "../services/walletService";
-import { copyText, fetchWalletAssets, getChainLabel, getWalletAssetNetwork, isValidEvmAddress, sendEvmAssetTransaction } from "../services/walletService";
+import { getAccountRates, submitAccountPayment, type SendPaymentResult } from "../services/accountService";
 
-function fmt(n: number, decimals = 8) {
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: Math.min(decimals, n >= 1 ? 6 : 8) }).format(n);
+function fmt(value: number, maximumFractionDigits = 6) {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits }).format(value);
 }
-function short(value: string) { return value.length > 18 ? `${value.slice(0, 9)}…${value.slice(-6)}` : value; }
-const EXPLORERS: Record<string, string> = {
-  ethereum: "https://etherscan.io/tx/", bnb: "https://bscscan.com/tx/", polygon: "https://polygonscan.com/tx/",
-  arbitrum: "https://arbiscan.io/tx/", optimism: "https://optimistic.etherscan.io/tx/", base: "https://basescan.org/tx/",
-  avalanche: "https://snowtrace.io/tx/", monad: "https://monadscan.com/tx/",
-};
+function statusCopy(status: string) {
+  if (status === "confirmed") return "Confirmed on Monad Testnet";
+  if (status === "failed") return "The transaction failed on-chain";
+  if (status === "submitted" || status === "pending") return "Submitted; confirmation is still pending";
+  return "Payment status received";
+}
 
 export default function Send({
-  onBack, initialRecipient = "", walletAddress = null, walletChainId = null, walletAssets = [],
-  onConnectWallet, onTransactionSubmitted,
+  onBack,
+  initialRecipient = "",
+  walletAddress = null,
+  onTransactionSubmitted,
 }: {
-  onBack: () => void; initialRecipient?: string; walletAddress?: string | null; walletChainId?: string | null;
-  walletAssets?: WalletAsset[]; onConnectWallet?: () => void; onTransactionSubmitted?: () => void;
+  onBack: () => void;
+  initialRecipient?: string;
+  walletAddress?: string | null;
+  walletChainId?: string | null;
+  walletAssets?: unknown[];
+  onConnectWallet?: () => void;
+  onTransactionSubmitted?: () => void;
 }) {
   const [recipient, setRecipient] = useState(initialRecipient);
   const [amount, setAmount] = useState("");
-  const [selectedAssetId, setSelectedAssetId] = useState("");
+  const [currency, setCurrency] = useState<"INR" | "USD">("INR");
+  const [note, setNote] = useState("");
+  const [rates, setRates] = useState<{ tokenUsd: number; usdLocal: number } | null>(null);
+  const [ratesError, setRatesError] = useState("");
   const [notice, setNotice] = useState("");
-  const [reviewing, setReviewing] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [transactionHash, setTransactionHash] = useState("");
-  const [recipientChecked, setRecipientChecked] = useState(false);
-  const [checkingRecipient, setCheckingRecipient] = useState(false);
-  const [recipientNetworks, setRecipientNetworks] = useState<string[]>([]);
-  const [hashCopied, setHashCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<SendPaymentResult | null>(null);
 
   useEffect(() => {
-    if (initialRecipient) { setRecipient(initialRecipient); setRecipientChecked(false); setReviewing(false); setTransactionHash(""); }
+    let alive = true;
+    setRates(null);
+    setRatesError("");
+    void getAccountRates(currency).then((value) => {
+      if (alive) setRates({ tokenUsd: value.tokenUsd, usdLocal: value.usdLocal });
+    }).catch((error) => {
+      if (alive) setRatesError(error instanceof Error ? error.message : "A live payment quote is unavailable.");
+    });
+    return () => { alive = false; };
+  }, [currency]);
+
+  useEffect(() => {
+    if (initialRecipient) {
+      setRecipient(initialRecipient);
+      setResult(null);
+      setNotice("");
+    }
   }, [initialRecipient]);
-  useEffect(() => {
-    if (walletAssets.length && !walletAssets.some((asset) => asset.id === selectedAssetId)) setSelectedAssetId(walletAssets[0].id);
-    if (!walletAssets.length) setSelectedAssetId("");
-  }, [walletAssets, selectedAssetId]);
 
-  const asset = walletAssets.find((item) => item.id === selectedAssetId) ?? null;
-  const network = asset ? getWalletAssetNetwork(asset) : null;
-  const typed = recipient.trim();
-  const isHandle = typed.includes("@") && !typed.startsWith("0x");
-  const validAddress = isValidEvmAddress(typed);
-  const nAmount = Number(amount);
-  const validAmount = amount.trim() !== "" && Number.isFinite(nAmount) && nAmount > 0;
-  const enoughBalance = Boolean(asset && validAmount && nAmount <= asset.balance);
-  const canReview = Boolean(walletAddress && asset && network && validAddress && enoughBalance && !submitting && !transactionHash);
+  const amountNumber = Number(amount);
+  const validAmount = amount.trim() !== "" && Number.isFinite(amountNumber) && amountNumber > 0;
+  const estimatedMon = rates && validAmount
+    ? (currency === "INR" ? amountNumber / rates.usdLocal : amountNumber) / rates.tokenUsd
+    : null;
 
-  const compatibility = useMemo(() => {
-    if (!asset) return "Connect a wallet with a supported asset to create a transfer.";
-    if (!network) return `Sending from ${asset.chainLabel} is not supported yet. No transaction has been sent.`;
-    if (!validAddress) return isHandle
-      ? "Handle lookup is not connected. Use the recipient's verified wallet address until the Subtle Pay account-directory backend is available."
-      : "Enter a valid EVM address beginning with 0x.";
-    if (!validAmount) return "Enter an amount greater than zero.";
-    if (nAmount > asset.balance) return `Your indexed balance is ${fmt(asset.balance, asset.tokenDecimals)} ${asset.tokenSymbol}.`;
-    if (walletChainId && walletChainId.toLowerCase() !== network.chainId) {
-      return `This direct transfer is compatible on ${network.label}. Your wallet is on ${getChainLabel(walletChainId)}; it must switch networks before the wallet can ask you to approve the transfer.`;
-    }
-    return `Direct same-chain transfer on ${network.label} is available for this asset. Your wallet will estimate gas and ask you to approve the transaction.`;
-  }, [asset, network, validAddress, isHandle, validAmount, nAmount, walletChainId]);
-
-  async function checkRecipient() {
-    setReviewing(false);
+  async function submit(event: { preventDefault: () => void }) {
+    event.preventDefault();
     setNotice("");
-    setTransactionHash("");
-    setRecipientChecked(true);
-    setRecipientNetworks([]);
-    if (isHandle) {
-      setNotice("Handle lookup is not connected. Use the recipient's verified wallet address until the Subtle Pay account-directory backend is available.");
+    setResult(null);
+    if (!walletAddress) {
+      setNotice("Your Subtle Pay account wallet is unavailable. Sign in again before sending.");
       return;
     }
-    if (!validAddress) {
-      setNotice("This does not look like a valid EVM address. No network lookup or transaction was performed.");
+    if (!recipient.trim()) {
+      setNotice("Enter a recipient account ID, Subtle Pay handle, or EVM address.");
       return;
     }
-    setCheckingRecipient(true);
-    try {
-      // Explicit click only: public indexed balances can indicate where address activity exists,
-      // but never establish identity or prove that an attempted transfer will be accepted.
-      const assets = await fetchWalletAssets(typed);
-      const networks = [...new Set(assets.map((item) => item.chainLabel))].sort();
-      setRecipientNetworks(networks);
-      setNotice(networks.length
-        ? `Ankr's index reports positive balances on ${networks.length} supported EVM network${networks.length === 1 ? "" : "s"}. This is not identity verification and doesn't guarantee a transfer will succeed.`
-        : "The address format is valid, but no indexed positive balance was found on supported EVM networks. It may still be able to receive funds.");
-    } catch (error) {
-      setNotice(`Address format is valid, but the network-activity lookup failed: ${error instanceof Error ? error.message : "service unavailable"}`);
-    } finally {
-      setCheckingRecipient(false);
+    if (!validAmount) {
+      setNotice("Enter an amount greater than zero.");
+      return;
     }
-  }
-
-  async function submitTransfer() {
-    if (!asset || !walletAddress || !network || !validAddress || !enoughBalance) return;
-    setSubmitting(true); setNotice("");
+    if (ratesError || !rates) {
+      setNotice("A live quote is unavailable. No payment was sent; retry when the rate service is available.");
+      return;
+    }
+    setBusy(true);
     try {
-      const hash = await sendEvmAssetTransaction({ walletAddress, recipient: typed, asset, amount });
-      setTransactionHash(hash);
-      setReviewing(false);
-      setNotice("Transaction submitted by your wallet. It may still be pending; submission does not guarantee confirmation.");
+      const payment = await submitAccountPayment({
+        to: recipient.trim(),
+        amount,
+        amountCurrency: currency,
+        note: note.trim() || undefined,
+        asset: "MON",
+      });
+      setResult(payment);
+      setNotice(statusCopy(payment.status));
       onTransactionSubmitted?.();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "The wallet could not submit the transaction.");
-    } finally { setSubmitting(false); }
-  }
-
-  async function copyHash() {
-    try { await copyText(transactionHash); setHashCopied(true); }
-    catch { setNotice("Copy is unavailable in this browser."); }
+      setNotice(error instanceof Error ? error.message : "Payment failed. No success has been assumed.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <div className="page-stack inner-page send-page">
       <button className="back-link" type="button" onClick={onBack}><Icon name="arrow-left" size={17} /> Back to wallet</button>
-      <div className="page-intro"><div><div className="section-kicker">ON-CHAIN PAYMENT</div><h1>Send money</h1><p>Review the network and recipient before you approve anything.</p></div><span className="page-icon-bubble"><Icon name="send" size={20} /></span></div>
+      <div className="page-intro">
+        <div><div className="section-kicker">MONAD TESTNET PAYMENT</div><h1>Send money</h1><p>Payments are signed by your Subtle Pay account wallet and settle in native testnet MON.</p></div>
+        <span className="page-icon-bubble"><Icon name="send" size={20} /></span>
+      </div>
 
-      {!walletAddress ? (
-        <section className="panel send-wallet-connect">
-          <span className="send-connect-icon"><Icon name="wallet" size={23} /></span><h2>Connect your wallet</h2>
-          <p>Subtle Pay does not hold funds or store private keys. Connect an EVM wallet to read your balance and request a transfer.</p>
-          {onConnectWallet && <button type="button" className="primary-button" onClick={onConnectWallet}><Icon name="wallet" size={16} /> Connect wallet</button>}
-        </section>
-      ) : (
-        <section className="panel send-panel">
-          <div className="send-connected-line"><span className="send-connected-dot" /><div><strong>Wallet connected</strong><small>{short(walletAddress)} · {getChainLabel(walletChainId)}</small></div></div>
+      <section className="panel send-panel">
+        <div className="send-connected-line"><span className="send-connected-dot" /><div><strong>Subtle Pay account wallet</strong><small>{walletAddress ? `${walletAddress.slice(0, 8)}…${walletAddress.slice(-6)} · Monad Testnet` : "Account wallet unavailable"}</small></div></div>
+        <div className="account-testnet-note">Hackathon mode · Native MON on Monad Testnet only. Testnet tokens are not money and have no cash value. Other coins may be shown for market information but cannot be sent through this payment flow.</div>
 
-          <div className="step-heading"><span className="step-number">01</span><div><h2>Recipient</h2><p>Use a verified EVM address. Account-handle lookup is not connected yet.</p></div></div>
-          <label className="field-label" htmlFor="recipient-identity">Recipient wallet address</label>
-          <div className="input-with-icon">
-            <Icon name="search" size={18} /><input id="recipient-identity" value={recipient}
-              onChange={(event) => { setRecipient(event.target.value); setRecipientChecked(false); setRecipientNetworks([]); setReviewing(false); setTransactionHash(""); setNotice(""); }}
-              placeholder="0x… recipient address" autoComplete="off" spellCheck={false} />
-            {recipient && <button type="button" className="recipient-clear-button" onClick={() => { setRecipient(""); setRecipientChecked(false); setReviewing(false); setNotice(""); }} aria-label="Clear recipient"><Icon name="close" size={15} /></button>}
-          </div>
-          <button type="button" className="secondary-button send-inspect-button" onClick={() => void checkRecipient()} disabled={checkingRecipient}><Icon name={checkingRecipient ? "refresh" : "shield"} size={16} /> {checkingRecipient ? "Inspecting networks…" : "Inspect address networks"}</button>
-          {recipientChecked && <div className={validAddress && !isHandle ? "recipient-check-state valid" : "recipient-check-state"}><Icon name={validAddress && !isHandle ? "check-circle" : "info"} size={16} /><span>{validAddress && !isHandle ? "Valid EVM address format — network activity is an index hint, not identity verification." : isHandle ? "Handle registry unavailable" : "Address format didn't pass validation."}</span></div>}
-          {checkingRecipient && <div className="recipient-network-lookup"><span className="ta-search-spinner" /> Inspecting indexed EVM network activity…</div>}
-          {!!recipientNetworks.length && <div className="recipient-network-lookup"><strong>Indexed network activity</strong><div>{recipientNetworks.map((chain) => <span className="recipient-network-chip" key={chain}>{chain}</span>)}</div></div>}
+        <form onSubmit={(event) => void submit(event)}>
+          <div className="step-heading"><span className="step-number">01</span><div><h2>Recipient</h2><p>Use an account ID, claimed Subtle Pay handle, or full EVM address.</p></div></div>
+          <label className="field-label" htmlFor="payment-recipient">Recipient</label>
+          <div className="input-with-icon"><Icon name="user" size={18} /><input id="payment-recipient" value={recipient} onChange={(event) => { setRecipient(event.target.value); setResult(null); setNotice(""); }} placeholder="Account ID, handle or 0x address" autoComplete="off" spellCheck={false} required /></div>
 
-          <div className="step-heading send-step-heading"><span className="step-number">02</span><div><h2>Choose an asset you own</h2><p>The selected asset determines the network. A direct send does not bridge between chains.</p></div></div>
-          <label className="field-label" htmlFor="send-asset-select">Wallet asset and network</label>
-          <select id="send-asset-select" className="form-select full-select" value={selectedAssetId} onChange={(event) => { setSelectedAssetId(event.target.value); setReviewing(false); setNotice(""); setTransactionHash(""); }} disabled={!walletAssets.length}>
-            {!walletAssets.length ? <option value="">No indexed balances were found</option> : walletAssets.map((item) => <option key={item.id} value={item.id}>{item.tokenSymbol} · {item.chainLabel} · {fmt(item.balance, item.tokenDecimals)}</option>)}
+          <div className="step-heading send-step-heading"><span className="step-number">02</span><div><h2>Payment value</h2><p>Enter a value to convert to MON using the backend's current market quote.</p></div></div>
+          <label className="field-label" htmlFor="payment-currency">Currency</label>
+          <select id="payment-currency" className="form-select full-select" value={currency} onChange={(event) => setCurrency(event.target.value as "INR" | "USD")}>
+            <option value="INR">Indian rupee (INR)</option><option value="USD">US dollar (USD)</option>
           </select>
-          {asset && <div className="send-selected-asset">
-            <span className="send-selected-asset-mark"><Icon name={asset.contractAddress ? "coins" : "wallet"} size={19} /></span>
-            <span><strong>{asset.tokenName} ({asset.tokenSymbol})</strong><small>{asset.chainLabel} · {asset.contractAddress ? "Token contract" : "Native coin"}</small></span>
-            <span className="send-balance-copy">{fmt(asset.balance, asset.tokenDecimals)}<small>available</small></span>
-          </div>}
+          <label className="field-label" htmlFor="payment-amount">Amount</label>
+          <input id="payment-amount" className="form-input" type="number" min="0" step="any" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setResult(null); setNotice(""); }} placeholder="0.00" required />
+          <label className="field-label" htmlFor="payment-note">Note (optional)</label>
+          <input id="payment-note" className="form-input" value={note} onChange={(event) => setNote(event.target.value.slice(0, 140))} maxLength={140} placeholder="What is this payment for?" />
 
-          <div className="step-heading send-step-heading"><span className="step-number">03</span><div><h2>Amount</h2><p>Network fees are paid separately in the chain's native coin.</p></div></div>
-          <label className="field-label" htmlFor="send-amount">Amount to send</label>
-          <div className="send-token-amount-row">
-            <input id="send-amount" type="number" min="0" max={asset?.balance} step="any" inputMode="decimal" placeholder="0.00" value={amount}
-              onChange={(event) => { setAmount(event.target.value); setReviewing(false); setNotice(""); setTransactionHash(""); }} disabled={!asset} />
-            <span>{asset?.tokenSymbol ?? "TOKEN"}</span>
-            {asset && <button type="button" onClick={() => { setAmount(String(asset.balance)); setReviewing(false); setNotice(""); }} aria-label="Use full available balance">Max</button>}
-          </div>
-          {asset && validAmount && nAmount > asset.balance && <p className="send-validation-error">Amount exceeds your indexed balance.</p>}
+          <div className="send-selected-asset"><span className="send-selected-asset-mark"><Icon name="coins" size={19} /></span><span><strong>MON · Monad Testnet</strong><small>Settlement asset · Native token</small></span><span className="send-balance-copy">{estimatedMon == null ? "—" : `≈ ${fmt(estimatedMon, 8)} MON`}<small>estimate only</small></span></div>
+          <p className="account-gate-hint">{rates ? `Quote updated with the rate service. 1 MON ≈ ${currency === "INR" ? fmt(rates.tokenUsd * rates.usdLocal, 2) + " INR" : "$" + fmt(rates.tokenUsd, 4)}. The final sent amount is returned by the backend.` : ratesError || "Loading a current estimate…"}</p>
 
-          <div className={validAddress && network && enoughBalance ? "send-compatibility valid" : "send-compatibility"}>
-            <span className="send-compatibility-icon"><Icon name={validAddress && network && enoughBalance ? "check-circle" : "info"} size={18} /></span>
-            <div><strong>{network ? `Network compatibility · ${network.label}` : "Network compatibility"}</strong><p>{compatibility}</p></div>
-          </div>
-          <div className="send-safety-note"><Icon name="shield" size={17} /><p>Before prompting your wallet, Subtle Pay estimates gas and checks balances. Your wallet must approve network switching and the transaction. No key is stored by Subtle Pay.</p></div>
+          <button className="primary-button" type="submit" disabled={busy || !walletAddress || !validAmount}>{busy ? "Submitting payment…" : "Review and send testnet MON"}</button>
+        </form>
+      </section>
 
-          {!reviewing && !transactionHash && <button type="button" className="primary-button wide-button" disabled={!canReview} onClick={() => { setNotice(""); setReviewing(true); }}><Icon name="document" size={16} /> Review transfer</button>}
-          {reviewing && asset && network && <section className="send-review-card" aria-label="Transfer review">
-            <div className="send-review-head"><span className="section-kicker">FINAL REVIEW</span><strong>Confirm every detail</strong></div>
-            <div className="send-review-amount">{fmt(nAmount, asset.tokenDecimals)} <span>{asset.tokenSymbol}</span></div>
-            <div className="send-review-row"><span>Network</span><strong>{network.label}</strong></div>
-            <div className="send-review-row"><span>Recipient</span><code title={typed}>{short(typed)}</code></div>
-            <div className="send-review-row"><span>Asset</span><strong>{asset.tokenName}</strong></div>
-            <p>Nothing is sent until you approve it in your wallet. A direct send only delivers this asset on {network.label}; it cannot transfer value across blockchains.</p>
-            <div className="send-review-actions"><button type="button" className="secondary-button" onClick={() => setReviewing(false)} disabled={submitting}>Edit details</button><button type="button" className="primary-button" onClick={() => void submitTransfer()} disabled={submitting}>{submitting ? "Waiting for wallet…" : "Confirm in wallet"}</button></div>
-          </section>}
-
-          {transactionHash && network && <section className="send-success-state" role="status">
-            <span><Icon name="check-circle" size={22} /></span><div><strong>Transaction submitted</strong><p>Submission does not guarantee confirmation. Check the transaction status on the explorer.</p></div>
-            <code>{short(transactionHash)}</code>
-            <div className="send-review-actions"><button type="button" className="secondary-button" onClick={() => void copyHash()}><Icon name="copy" size={15} /> {hashCopied ? "Copied" : "Copy hash"}</button>{EXPLORERS[network.id] && <a className="primary-button" href={`${EXPLORERS[network.id]}${transactionHash}`} target="_blank" rel="noreferrer"><Icon name="arrow-up-right" size={15} /> View transaction</a>}</div>
-          </section>}
-
-          {notice && <div className="inline-notice" role="status"><Icon name="info" size={16} /><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice"><Icon name="close" size={15} /></button></div>}
-        </section>
-      )}
-      <section className="panel send-route-info"><div className="section-kicker">IMPORTANT</div><h2>Same-chain transfers only</h2><p>A 0x address can exist on more than one EVM network, but a transfer on Ethereum is not delivered to Monad. Cross-chain payments need a verified bridge or exchange route, which is not integrated here.</p></section>
+      {notice && <div className={result?.status === "confirmed" ? "inline-notice success" : "inline-notice"} role="status"><Icon name={result?.status === "confirmed" ? "check-circle" : "info"} size={16} /><span>{notice}</span></div>}
+      {result && <section className="panel">
+        <div className="panel-heading compact"><div><div className="section-kicker">PAYMENT RESULT</div><h2>{result.tokenAmount} MON</h2></div><span className={result.status === "confirmed" ? "status-pill success" : result.status === "failed" ? "status-pill warning" : "status-pill neutral"}>{result.status}</span></div>
+        <p>Transaction ID: <code>{result.txId}</code></p>
+        <p>Transaction hash: <code className="receive-full-address">{result.txHash}</code></p>
+        <a href={`https://testnet.monadexplorer.com/tx/${result.txHash}`} target="_blank" rel="noreferrer">View on Monad Testnet Explorer ↗</a>
+      </section>}
     </div>
   );
 }
