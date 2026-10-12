@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import AccountGate from "./components/AccountGate";
+import { getAccountHome, logoutAccount, restoreAccountSession, updateAccountProfile, type AccountProfile } from "./services/accountService";
 import BottomNav, { type PageId } from "./components/BottomNav";
 import Icon from "./components/Icon";
 import WalletCard from "./components/WalletCard";
@@ -9,9 +11,43 @@ import More from "./pages/More";
 import Notifications from "./pages/Notifications";
 import Receive from "./pages/Receive";
 import Send from "./pages/Send";
-import { type WalletAsset, connectEvmWallet, copyText, fetchWalletAssets, getChainLabel, readConnectedEvmWallet } from "./services/walletService";
+import { type WalletAsset, copyText, fetchWalletAssets, getChainLabel } from "./services/walletService";
 
 type WalletStatus = "disconnected" | "connecting" | "loading" | "ready" | "error";
+
+/** Merge the authenticated Monad Testnet balance with optional indexed public-chain holdings. */
+async function fetchAccountWalletAssets(address: string, force = false): Promise<WalletAsset[]> {
+  const home = await getAccountHome();
+  if (home.address.toLowerCase() !== address.toLowerCase()) {
+    throw new Error("The authenticated account wallet did not match the requested address. Refresh your session.");
+  }
+  let indexed: WalletAsset[] = [];
+  try {
+    indexed = await fetchWalletAssets(address, force);
+  } catch {
+    // The verified Monad Testnet balance must remain usable even if the optional indexer is down.
+  }
+  const native: WalletAsset = {
+    id: "monad-testnet:native:mon",
+    blockchain: "monad-testnet",
+    chainLabel: "Monad Testnet",
+    tokenName: "Monad Testnet MON",
+    tokenSymbol: "MON",
+    balance: Number(home.balanceToken) || 0,
+    balanceUsd: Number(home.balanceUsd),
+    priceUsd: home.rates?.tokenUsd ?? null,
+    tokenDecimals: 18,
+    contractAddress: null,
+    thumbnail: null,
+    tokenType: "native",
+  };
+  const withoutDuplicateTestnetMon = indexed.filter((asset) =>
+    !(asset.tokenSymbol.toUpperCase() === "MON" &&
+      (asset.blockchain.toLowerCase().includes("monad-testnet") || asset.chainLabel.toLowerCase().includes("monad testnet")) &&
+      !asset.contractAddress)
+  );
+  return [native, ...withoutDuplicateTestnetMon];
+}
 
 function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
@@ -67,6 +103,8 @@ export default function App() {
   const [showOpening, setShowOpening] = useState(true);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [displayName, setDisplayName] = useState(readSavedName);
+  const [accountProfile, setAccountProfile] = useState<AccountProfile | null>(null);
+  const [accountLoading, setAccountLoading] = useState(true);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [walletChainId, setWalletChainId] = useState<string | null>(null);
   const [walletAssets, setWalletAssets] = useState<WalletAsset[]>([]);
@@ -79,7 +117,7 @@ export default function App() {
     setWalletStatus((current) => current === "disconnected" ? "loading" : current);
     setWalletError(null);
     try {
-      const assets = await fetchWalletAssets(address, force);
+      const assets = await fetchAccountWalletAssets(address, force);
       setWalletAssets(assets);
       setWalletStatus("ready");
       setSelectedToken((current) => assets.some((asset) => asset.id === current) ? current : assets[0]?.id ?? "");
@@ -89,28 +127,20 @@ export default function App() {
     }
   }, []);
 
-  const connectWallet = useCallback(async () => {
-    setWalletStatus("connecting");
-    setWalletError(null);
-    try {
-      const connected = await connectEvmWallet();
-      setWalletAddress(connected.address);
-      setWalletChainId(connected.chainId);
-      setWalletStatus("loading");
-    } catch (error) {
-      setWalletStatus("error");
-      setWalletError(error instanceof Error ? error.message : "Wallet connection was not completed.");
-    }
+  const connectWallet = useCallback(() => {
+    setWalletError("Sign in to use the Subtle Pay account wallet. External wallet transfers are disabled in this testnet payment flow.");
   }, []);
 
   const disconnectWallet = useCallback(() => {
-    // This only disconnects the app UI; it never deletes or changes the external wallet.
+    void logoutAccount().catch(() => undefined);
+    setAccountProfile(null);
     setWalletAddress(null);
     setWalletChainId(null);
     setWalletAssets([]);
     setSelectedToken("");
     setWalletError(null);
     setWalletStatus("disconnected");
+    setActivePage("wallet");
   }, []);
 
   const copyWalletAddress = useCallback(async () => {
@@ -124,52 +154,24 @@ export default function App() {
   }, [walletAddress]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const timer = window.setTimeout(() => setShowOpening(false), 650);
-    return () => window.clearTimeout(timer);
+    let alive = true;
+    void restoreAccountSession().then((profile) => {
+      if (!alive) return;
+      setAccountProfile(profile);
+      setDisplayName(profile?.displayName ?? "");
+      setWalletAddress(profile?.walletAddress ?? null);
+      setWalletChainId(profile ? "0x279f" : null);
+      setWalletStatus(profile?.walletAddress ? "loading" : "disconnected");
+    }).finally(() => {
+      if (alive) setAccountLoading(false);
+    });
+    return () => { alive = false; };
   }, []);
 
   useEffect(() => {
-    let alive = true;
-    const provider = window.ethereum;
-    const syncAccount = async () => {
-      const connected = await readConnectedEvmWallet();
-      if (!alive) return;
-      if (connected) {
-        setWalletAddress((current) => current === connected.address ? current : connected.address);
-        setWalletChainId(connected.chainId);
-      } else {
-        setWalletAddress(null);
-        setWalletChainId(null);
-        setWalletAssets([]);
-        setWalletStatus("disconnected");
-      }
-    };
-    void syncAccount();
-
-    const onAccountsChanged = (value: unknown) => {
-      const accounts = Array.isArray(value) ? value : [];
-      const address = typeof accounts[0] === "string" ? accounts[0] : "";
-      if (!address) {
-        setWalletAddress(null);
-        setWalletChainId(null);
-        setWalletAssets([]);
-        setWalletStatus("disconnected");
-      } else {
-        setWalletAddress(address);
-        setWalletStatus("loading");
-      }
-    };
-    const onChainChanged = (value: unknown) => {
-      if (typeof value === "string") setWalletChainId(value.toLowerCase());
-    };
-    provider?.on?.("accountsChanged", onAccountsChanged);
-    provider?.on?.("chainChanged", onChainChanged);
-    return () => {
-      alive = false;
-      provider?.removeListener?.("accountsChanged", onAccountsChanged);
-      provider?.removeListener?.("chainChanged", onChainChanged);
-    };
+    if (typeof window === "undefined") return;
+    const timer = window.setTimeout(() => setShowOpening(false), 650);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -177,7 +179,7 @@ export default function App() {
     let alive = true;
     const load = async (force = false) => {
       try {
-        const assets = await fetchWalletAssets(walletAddress, force);
+        const assets = await fetchAccountWalletAssets(walletAddress, force);
         if (!alive) return;
         setWalletAssets(assets);
         setWalletStatus("ready");
@@ -206,25 +208,16 @@ export default function App() {
   }, [walletAddress]);
 
   useEffect(() => {
-    const syncDisplayName = () => setDisplayName(readSavedName(walletAddress));
-    syncDisplayName();
     const syncNotice = (event: Event) => {
       const message = (event as CustomEvent<string>).detail;
       if (message) {
-        // Use the browser's native title temporarily; no sensitive wallet data is sent anywhere.
         document.title = message;
         window.setTimeout(() => { document.title = "Subtle Pay"; }, 1800);
       }
     };
-    window.addEventListener("storage", syncDisplayName);
-    window.addEventListener("subtlepay:username", syncDisplayName);
     window.addEventListener("subtlepay:notice", syncNotice);
-    return () => {
-      window.removeEventListener("storage", syncDisplayName);
-      window.removeEventListener("subtlepay:username", syncDisplayName);
-      window.removeEventListener("subtlepay:notice", syncNotice);
-    };
-  }, [walletAddress]);
+    return () => window.removeEventListener("subtlepay:notice", syncNotice);
+  }, []);
 
   useEffect(() => {
     if (!resumeConsent) return;
@@ -238,21 +231,12 @@ export default function App() {
 
   function saveDisplayName(value: string) {
     const cleaned = value.trim().slice(0, 80);
-    try {
-      if (walletAddress) {
-        // This local display label is tied to the connected address on this device.
-        // Global handle ownership/search still belongs in the backend account directory.
-        window.localStorage.setItem(walletNameKey(walletAddress), cleaned);
-      } else if (cleaned) {
-        window.localStorage.setItem("subtlePayUserName", cleaned);
-      } else {
-        window.localStorage.removeItem("subtlePayUserName");
-      }
-    } catch {
-      // The name can still be changed for this session.
-    }
     setDisplayName(cleaned);
-    window.dispatchEvent(new Event("subtlepay:username"));
+    void updateAccountProfile({ displayName: cleaned || null }).then((updated) => {
+      setAccountProfile((current) => current ? { ...current, ...updated } : current);
+    }).catch((error) => {
+      window.dispatchEvent(new CustomEvent("subtlepay:notice", { detail: error instanceof Error ? error.message : "Profile update failed." }));
+    });
   }
 
   function chooseResumeConsent(allow: boolean) {
@@ -285,6 +269,21 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  if (accountLoading) {
+    return <main className="account-gate"><section className="account-gate-card"><strong>Subtle Pay</strong><p className="account-gate-muted">Restoring your secure account session…</p></section></main>;
+  }
+
+  if (!accountProfile) {
+    return <AccountGate onAuthenticated={(profile) => {
+      setAccountProfile(profile);
+      setDisplayName(profile.displayName ?? "");
+      setWalletAddress(profile.walletAddress);
+      setWalletChainId("0x279f");
+      setWalletStatus("loading");
+      setActivePage("wallet");
+    }} />;
   }
 
   return (
@@ -379,7 +378,7 @@ export default function App() {
             onConnectWallet={connectWallet}
           />}
           {activePage === "merchant" && <Merchant />}
-          {activePage === "more" && <More />}
+          {activePage === "more" && <More accountId={accountProfile.accountId} walletAddress={walletAddress} onLogout={disconnectWallet} />}
           {activePage === "activity" && <Activity />}
           {activePage === "notifications" && <Notifications />}
         </main>

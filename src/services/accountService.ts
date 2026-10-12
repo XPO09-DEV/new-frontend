@@ -40,9 +40,12 @@ function apiUrl(path: string): string {
 }
 
 class ApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
     super(message);
     this.name = "ApiError";
+    this.status = status;
   }
 }
 
@@ -170,4 +173,72 @@ export async function restoreAccountSession(): Promise<AccountProfile | null> {
     accessToken = null;
     return null;
   }
+}
+
+
+export interface AccountHome {
+  accountId: string;
+  alias: string | null;
+  displayName: string | null;
+  region: string | null;
+  regionConsentAt: number | null;
+  currency: string;
+  address: string;
+  balanceToken: string;
+  balanceUsd: string;
+  balanceLocal: string;
+  asset: string;
+  chainId: number;
+  rates: { tokenUsd: number; usdLocal: number; currency: string; updatedAt: string };
+}
+
+export interface PaymentRecord {
+  id: string;
+  direction: "in" | "out";
+  counterparty: string;
+  usdValue: string;
+  localValue: string;
+  displayCurrency: string;
+  status: "pending" | "confirmed" | "failed" | "submitted" | string;
+  txHash: string | null;
+  createdAt: string;
+}
+
+export interface SendPaymentInput {
+  to: string;
+  amount: string;
+  amountCurrency: "USD" | "INR";
+  note?: string;
+  asset: "MON";
+}
+
+export interface SendPaymentResult {
+  txId: string;
+  status: "pending" | "confirmed" | "failed" | "submitted" | string;
+  tokenAmount: string;
+  usdValue: string;
+  txHash: string;
+}
+
+export async function getAccountHome(): Promise<AccountHome> {
+  return authenticatedRequest<AccountHome>("/home");
+}
+
+export async function submitAccountPayment(input: SendPaymentInput): Promise<SendPaymentResult> {
+  const idempotencyKey = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `sp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return authenticatedRequest<SendPaymentResult>("/payments/send", {
+    method: "POST",
+    headers: { "idempotency-key": idempotencyKey },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getPaymentHistory(): Promise<PaymentRecord[]> {
+  return authenticatedRequest<PaymentRecord[]>("/payments");
+}
+
+export async function getAccountRates(currency: "USD" | "INR" = "USD"): Promise<{ tokenUsd: number; usdLocal: number; currency: string; updatedAt: string }> {
+  return rawRequest<{ tokenUsd: number; usdLocal: number; currency: string; updatedAt: string }>(`/rates?currency=${currency}`, {}, false);
 }

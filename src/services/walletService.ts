@@ -90,6 +90,7 @@ export const SUPPORTED_EVM_NETWORKS = [
   { id: "base", label: "Base", chainId: "0x2105", chainNumber: 8453, ankrName: "base" },
   { id: "avalanche", label: "Avalanche C-Chain", chainId: "0xa86a", chainNumber: 43114, ankrName: "avalanche" },
   { id: "monad", label: "Monad", chainId: "0x8f", chainNumber: 143, ankrName: "monad" },
+  { id: "monad-testnet", label: "Monad Testnet", chainId: "0x279f", chainNumber: 10143, ankrName: "monad-testnet" },
 ] as const;
 
 const NETWORK_LABELS: Record<string, string> = {

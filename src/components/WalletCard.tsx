@@ -63,10 +63,10 @@ export default function WalletCard({
           <span title={walletAddress}>{shortAddress(walletAddress)}</span>
           <button type="button" onClick={onCopyAddress} aria-label="Copy wallet address" title="Copy address"><Icon name="copy" size={12} /></button>
           {onRefreshWallet && <button type="button" onClick={onRefreshWallet} disabled={busy} aria-label="Refresh wallet assets" title="Refresh wallet assets"><Icon name="refresh" size={12} /></button>}
-          {onDisconnectWallet && <button type="button" className="wallet-disconnect-button" onClick={onDisconnectWallet} aria-label="Disconnect wallet" title="Disconnect wallet"><Icon name="logout" size={12} /></button>}
+          {onDisconnectWallet && <button type="button" className="wallet-disconnect-button" onClick={onDisconnectWallet} aria-label="Sign out of account" title="Sign out of account"><Icon name="logout" size={12} /></button>}
         </div>
       ) : (
-        <div className="wallet-card-address muted"><Icon name="shield" size={12} /><span>Non-custodial · Connect your wallet to view real balances</span></div>
+        <div className="wallet-card-address muted"><Icon name="shield" size={12} /><span>Sign in to load your Subtle Pay account balance</span></div>
       )}
 
       <div className={`wallet-balance-row ${token ? "" : "wallet-balance-row-empty"}`}>
