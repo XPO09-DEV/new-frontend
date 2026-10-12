@@ -242,7 +242,7 @@ export async function fetchWalletAssets(address: string, force = false): Promise
         const params: Record<string, unknown> = {
           walletAddress: normalizedAddress,
           nativeFirst: true,
-          onlyWhitelisted: true,
+          onlyWhitelisted: false,
           pageSize: 100,
         };
         if (pageToken) params.pageToken = pageToken;
