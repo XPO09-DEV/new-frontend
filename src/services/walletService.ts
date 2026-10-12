@@ -10,6 +10,8 @@ declare global {
   }
 }
 
+export type WalletStatus = "disconnected" | "connecting" | "loading" | "ready" | "error";
+
 export interface ConnectedWallet {
   address: string;
   chainId: string;
@@ -183,21 +185,18 @@ function normalizeAnkrAsset(asset: AnkrAssetResponse): WalletAsset | null {
 
 async function fetchMonadNativeBalance(address: string): Promise<WalletAsset | null> {
   if (!MONAD_RPC_URL) return null;
-  const hex = await postAnkr<string>(MONAD_RPC_URL, "eth_getBalance", { address, blockTag: "latest" } as unknown as Record<string, unknown>).catch(async () => {
-    // Standard eth_getBalance takes a positional array rather than the Advanced API's named params.
-    const response = await fetch(MONAD_RPC_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", method: "eth_getBalance", params: [address, "latest"], id: 1 }),
-    });
-    if (!response.ok) throw new Error(`Monad balance request failed (${response.status}).`);
-    const payload = await response.json() as { result?: string; error?: { message?: string } };
-    if (payload.error || typeof payload.result !== "string") throw new Error(payload.error?.message || "Monad balance unavailable.");
-    return payload.result;
+  const response = await fetch(MONAD_RPC_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", method: "eth_getBalance", params: [address, "latest"], id: 1 }),
   });
+  if (!response.ok) throw new Error(`Monad balance request failed (${response.status}).`);
+  const payload = await response.json() as { result?: string; error?: { message?: string } };
+  if (payload.error || typeof payload.result !== "string") throw new Error(payload.error?.message || "Monad balance unavailable.");
+
   let amount: number;
   try {
-    amount = Number(BigInt(hex)) / 1e18;
+    amount = Number(BigInt(payload.result)) / 1e18;
   } catch {
     return null;
   }
