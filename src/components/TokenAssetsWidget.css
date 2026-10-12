@@ -446,3 +446,10 @@
   .ta-search-page-backdrop { animation: none; }
   .ta-search-page * { animation: none !important; transition: none !important; }
 }
+
+.ta-no-wallet-assets { display:flex; flex-direction:column; align-items:center; gap:8px; padding:24px 16px 18px; border-top:1px solid var(--ta-border); text-align:center; }
+.ta-no-wallet-assets-icon { display:grid; width:38px; height:38px; place-items:center; border-radius:12px; background:#f3f5f9; color:#69778d; font:500 22px/1 "Inter",sans-serif; }
+.ta-no-wallet-assets strong { color:#303b4f; font:650 12px/1.3 "Inter",sans-serif; }
+.ta-no-wallet-assets > span:last-of-type { max-width:330px; color:#8f98a8; font:450 10px/1.55 "Inter",sans-serif; }
+.ta-no-wallet-assets button { display:inline-flex; min-height:34px; align-items:center; justify-content:center; margin-top:3px; padding:8px 13px; border:1px solid #dfe5f0; border-radius:10px; background:#fff; color:#334462; font:650 10px/1 "Inter",sans-serif; }
+.ta-no-wallet-assets button:hover { background:#f6f8fc; border-color:#d3dceb; }
