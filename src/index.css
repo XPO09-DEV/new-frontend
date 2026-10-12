@@ -701,3 +701,27 @@ button, input, select { -webkit-tap-highlight-color: transparent; }
 .recipient-network-lookup > strong { width:100%; color:#58657d; font:650 9px/1.2 "Inter",sans-serif; }
 .recipient-network-lookup > div { display:flex; flex-wrap:wrap; gap:6px; }
 .recipient-network-chip { display:inline-flex; align-items:center; padding:6px 8px; border:1px solid #e4e9f2; border-radius:999px; background:#fff; color:#5f6d84; font:600 9px/1 "Inter",sans-serif; }
+
+
+/* Keep the four wallet shortcuts on one uninterrupted row at every mobile width. */
+.dashboard-page .quick-actions-section { min-width: 0; width: 100%; }
+.dashboard-page .quick-actions-section .quick-action-grid {
+  display: grid !important;
+  width: 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  grid-auto-flow: row;
+  align-items: start;
+  gap: 0;
+}
+.dashboard-page .quick-actions-section .quick-action {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding-inline: 0;
+}
+.dashboard-page .quick-actions-section .quick-action-icon { flex-shrink: 0; }
+@media (max-width: 380px) {
+  .dashboard-page .quick-actions-section .quick-action { gap: 5px; }
+  .dashboard-page .quick-actions-section .quick-action-icon { width: 45px; height: 45px; flex-basis: 45px; }
+  .dashboard-page .quick-actions-section .quick-action-copy strong { font-size: 9.5px; letter-spacing: -.025em; }
+}
