@@ -24,6 +24,7 @@ export default function WalletCard({
   walletError = null,
   onConnectWallet,
   onCopyAddress,
+  onRefreshWallet,
   onDisconnectWallet,
 }: {
   selectedToken: string;
@@ -35,6 +36,7 @@ export default function WalletCard({
   walletError?: string | null;
   onConnectWallet?: () => void;
   onCopyAddress?: () => void;
+  onRefreshWallet?: () => void;
   onDisconnectWallet?: () => void;
 }) {
   const token = walletAssets.find((asset) => asset.id === selectedToken) ?? walletAssets[0] ?? null;
@@ -60,6 +62,7 @@ export default function WalletCard({
           <Icon name="wallet" size={12} />
           <span title={walletAddress}>{shortAddress(walletAddress)}</span>
           <button type="button" onClick={onCopyAddress} aria-label="Copy wallet address" title="Copy address"><Icon name="copy" size={12} /></button>
+          {onRefreshWallet && <button type="button" onClick={onRefreshWallet} disabled={busy} aria-label="Refresh wallet assets" title="Refresh wallet assets"><Icon name="refresh" size={12} /></button>}
           {onDisconnectWallet && <button type="button" className="wallet-disconnect-button" onClick={onDisconnectWallet} aria-label="Disconnect wallet" title="Disconnect wallet"><Icon name="logout" size={12} /></button>}
         </div>
       ) : (
