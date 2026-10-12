@@ -867,9 +867,13 @@ export default function TokenAssetsWidget({
     const build = (id: string, symbol: string, name: string, isPinned: boolean): TokenAsset => {
       const m = market[id];
       const holding = holdingById.get(id);
-      const price = m?.price ?? holding?.price ?? null;
+      const price = m?.price ?? (currency.toLowerCase() === "usd" ? holding?.price ?? null : null);
       const amount = amounts.get(id) ?? 0;
-      const value = holding?.valueUsd ?? (price != null ? amount * price : 0);
+      const value = m?.price != null
+        ? amount * m.price
+        : currency.toLowerCase() === "usd"
+          ? holding?.valueUsd ?? (holding?.price != null ? amount * holding.price : Number.NaN)
+          : Number.NaN;
       return {
         id,
         symbol: m?.symbol || holding?.symbol || symbol,
@@ -878,7 +882,7 @@ export default function TokenAssetsWidget({
         price,
         pct24: m?.pct24 ?? null,
         amount,
-        value: Number.isFinite(value) ? value : 0,
+        value,
         pinned: isPinned,
         network: holding?.network,
         contractAddress: holding?.contractAddress ?? null,
@@ -889,10 +893,12 @@ export default function TokenAssetsWidget({
     const heldAssets = Array.from(amounts.entries())
       .filter(([id, amt]) => !pinnedIds.has(id) && amt > 0)
       .map(([id]) => build(id, id.toUpperCase(), id, false))
-      .sort((a, b) => b.value - a.value);
-    const total = [...pinnedAssets, ...heldAssets].reduce((s, a) => s + a.value, 0);
+      .sort((a, b) => (Number.isFinite(b.value) ? b.value : -1) - (Number.isFinite(a.value) ? a.value : -1));
+    const combined = [...pinnedAssets, ...heldAssets];
+    const allValued = combined.length > 0 && combined.every((asset) => Number.isFinite(asset.value));
+    const total = allValued ? combined.reduce((sum, asset) => sum + asset.value, 0) : null;
     return { pinnedAssets, heldAssets, total };
-  }, [holdings, pinned, market]);
+  }, [holdings, pinned, market, currency]);
 
   const allAssets = useMemo(
     // Keep pinned assets in the explicit USDT, USDC, MON order; wallet holdings stay value-sorted below them.
@@ -985,7 +991,7 @@ export default function TokenAssetsWidget({
   const shownPrice = hv ? hv[1] : selected?.price ?? null;
   const first = view?.[0][1];
   const deltaPct = first && shownPrice != null ? (shownPrice / first - 1) * 100 : selected?.pct24 ?? null;
-  const holdValue = selected && shownPrice != null ? selected.amount * shownPrice : 0;
+  const holdValue = selected && shownPrice != null ? selected.amount * shownPrice : null;
 
   const choose = (a: TokenAsset) => {
     triggerHaptic();
@@ -1182,7 +1188,7 @@ export default function TokenAssetsWidget({
         </span>
         <div className="ta-list-controls">
           <b title={walletConnected ? "Total wallet market value" : "Wallet is not connected"}>
-            {status === "loading" ? "—" : walletConnected ? fmtMoney(total, currency, "value") : "—"}
+            {status === "loading" || !walletConnected || total == null ? "—" : fmtMoney(total, currency, "value")}
           </b>
           <div className={`ta-search ${searchOpen ? "is-open" : ""}`}>
             <button type="button" className="ta-search-trigger"
