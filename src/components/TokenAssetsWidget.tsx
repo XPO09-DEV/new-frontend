@@ -1267,13 +1267,13 @@ export default function TokenAssetsWidget({
                     </div>
                   ) : (
                     <div className="ta-search-page-results" role="listbox" aria-label="Multichain asset results" aria-busy={searchLoading}>
-                      <div className="ta-search-results-head"><div><strong>Matches</strong><span>Only indexed assets with a known network deployment</span></div><span className="ta-search-count">{searchLoading ? "Searching…" : `${visibleSearchResults.length} shown`}</span></div>
+                      <div className="ta-search-results-head"><div><strong>Matches</strong><span>Indexed assets with known network deployments</span></div><span className="ta-search-count">{searchLoading ? "Searching…" : `${visibleSearchResults.length} shown`}</span></div>
                       {searchLoading ? (
-                        <div className="ta-search-message search-loading-message"><span className="ta-search-spinner" />Searching indexed assets and verifying deployments…</div>
+                        <div className="ta-search-message search-loading-message"><span className="ta-search-spinner" />Searching indexed assets and matching network deployments…</div>
                       ) : searchError ? (
                         <div className="ta-search-empty error"><strong>Search is temporarily unavailable</strong><span>{searchError}</span><button type="button" className="ta-search-retry" onClick={() => setSearchRetry((retry) => retry + 1)}>Try again</button></div>
                       ) : visibleSearchResults.length === 0 ? (
-                        <div className="ta-search-empty"><span className="ta-search-empty-icon">⌕</span><strong>{searchResults.length === 0 ? "No indexed assets found" : "No matches on this network"}</strong><span>{searchResults.length === 0 ? `No indexed native asset or verified token deployment matched “${searchQuery.trim()}”.` : "Choose another network or return to All networks."}</span></div>
+                        <div className="ta-search-empty"><span className="ta-search-empty-icon">⌕</span><strong>{searchResults.length === 0 ? "No indexed assets found" : "No matches on this network"}</strong><span>{searchResults.length === 0 ? `No indexed native asset or known token deployment matched “${searchQuery.trim()}”.` : "Choose another network or return to All networks."}</span></div>
                       ) : visibleSearchResults.map((coin) => (
                         <button key={coin.resultKey} type="button" role="option" aria-selected={coin.resultKey === searchSelected?.resultKey}
                           className="ta-search-result" onClick={() => chooseSearchToken(coin)}>
@@ -1320,7 +1320,8 @@ export default function TokenAssetsWidget({
               <Logo src={a.image} symbol={a.symbol} badge={badge} />
               <span className="ta-meta">
                 <b>{a.symbol}</b>
-                <small>{fmtMoney(a.price, currency, "price")}</small>
+                <small>{fmtMoney(a.price, currency, "price")}{a.network ? ` · ${a.network}` : ""}</small>
+                {a.contractAddress && <small className="ta-contract-address" title={a.contractAddress}>{`${a.contractAddress.slice(0, 7)}…${a.contractAddress.slice(-5)}`}</small>}
               </span>
               <span className="ta-nums">
                 <b>{walletConnected ? fmtAmount(a.amount) : "—"}</b>
