@@ -66,7 +66,6 @@ export default function Dashboard({
   displayName,
   onDisplayNameChange,
   walletAddress,
-  walletChainId,
   walletAssets,
   walletStatus,
   walletError,
@@ -82,7 +81,6 @@ export default function Dashboard({
   displayName: string;
   onDisplayNameChange: (name: string) => void;
   walletAddress: string | null;
-  walletChainId: string | null;
   walletAssets: WalletAsset[];
   walletStatus: WalletStatus;
   walletError: string | null;
