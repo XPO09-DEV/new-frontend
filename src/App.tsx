@@ -355,7 +355,6 @@ export default function App() {
             displayName={displayName}
             onDisplayNameChange={saveDisplayName}
             walletAddress={walletAddress}
-            walletChainId={walletChainId}
             walletAssets={walletAssets}
             walletStatus={walletStatus}
             walletError={walletError}
