@@ -64,6 +64,7 @@ export default function Dashboard({
   walletError,
   onConnectWallet,
   onCopyAddress,
+  onRefreshWallet,
   onDisconnectWallet,
 }: {
   selectedToken: string;
@@ -79,6 +80,7 @@ export default function Dashboard({
   walletError: string | null;
   onConnectWallet: () => void;
   onCopyAddress: () => void;
+  onRefreshWallet: () => void;
   onDisconnectWallet: () => void;
 }) {
   const [contacts, setContacts] = useState<SavedContact[]>(readSavedContacts);
@@ -215,6 +217,7 @@ export default function Dashboard({
         walletError={walletError}
         onConnectWallet={onConnectWallet}
         onCopyAddress={onCopyAddress}
+        onRefreshWallet={onRefreshWallet}
         onDisconnectWallet={onDisconnectWallet}
       />
 
