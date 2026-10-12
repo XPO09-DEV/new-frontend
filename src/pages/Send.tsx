@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Icon from "../components/Icon";
 import type { WalletAsset } from "../services/walletService";
-import { copyText, getChainLabel, getWalletAssetNetwork, isValidEvmAddress, sendEvmAssetTransaction } from "../services/walletService";
+import { copyText, fetchWalletAssets, getChainLabel, getWalletAssetNetwork, isValidEvmAddress, sendEvmAssetTransaction } from "../services/walletService";
 
 function fmt(n: number, decimals = 8) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: Math.min(decimals, n >= 1 ? 6 : 8) }).format(n);
@@ -28,6 +28,8 @@ export default function Send({
   const [submitting, setSubmitting] = useState(false);
   const [transactionHash, setTransactionHash] = useState("");
   const [recipientChecked, setRecipientChecked] = useState(false);
+  const [checkingRecipient, setCheckingRecipient] = useState(false);
+  const [recipientNetworks, setRecipientNetworks] = useState<string[]>([]);
   const [hashCopied, setHashCopied] = useState(false);
 
   useEffect(() => {
@@ -62,11 +64,35 @@ export default function Send({
     return `Direct same-chain transfer on ${network.label} is available for this asset. Your wallet will estimate gas and ask you to approve the transaction.`;
   }, [asset, network, validAddress, isHandle, validAmount, nAmount, walletChainId]);
 
-  function checkRecipient() {
-    setReviewing(false); setNotice(""); setTransactionHash(""); setRecipientChecked(true);
-    if (isHandle) setNotice("Handle lookup needs the Subtle Pay account-directory backend. A local display name is not yet a globally registered or searchable account.");
-    else if (!validAddress) setNotice("This does not look like a valid EVM address. No network lookup or transaction was performed.");
-    else setNotice("Address format looks valid. This does not prove the address belongs to the intended person; verify it independently before sending.");
+  async function checkRecipient() {
+    setReviewing(false);
+    setNotice("");
+    setTransactionHash("");
+    setRecipientChecked(true);
+    setRecipientNetworks([]);
+    if (isHandle) {
+      setNotice("Handle lookup is not connected. Use the recipient's verified wallet address until the Subtle Pay account-directory backend is available.");
+      return;
+    }
+    if (!validAddress) {
+      setNotice("This does not look like a valid EVM address. No network lookup or transaction was performed.");
+      return;
+    }
+    setCheckingRecipient(true);
+    try {
+      // Explicit click only: public indexed balances can indicate where address activity exists,
+      // but never establish identity or prove that an attempted transfer will be accepted.
+      const assets = await fetchWalletAssets(typed);
+      const networks = [...new Set(assets.map((item) => item.chainLabel))].sort();
+      setRecipientNetworks(networks);
+      setNotice(networks.length
+        ? `Ankr's index reports positive balances on ${networks.length} supported EVM network${networks.length === 1 ? "" : "s"}. This is not identity verification and doesn't guarantee a transfer will succeed.`
+        : "The address format is valid, but no indexed positive balance was found on supported EVM networks. It may still be able to receive funds.");
+    } catch (error) {
+      setNotice(`Address format is valid, but the network-activity lookup failed: ${error instanceof Error ? error.message : "service unavailable"}`);
+    } finally {
+      setCheckingRecipient(false);
+    }
   }
 
   async function submitTransfer() {
@@ -107,12 +133,14 @@ export default function Send({
           <label className="field-label" htmlFor="recipient-identity">Recipient wallet address</label>
           <div className="input-with-icon">
             <Icon name="search" size={18} /><input id="recipient-identity" value={recipient}
-              onChange={(event) => { setRecipient(event.target.value); setRecipientChecked(false); setReviewing(false); setTransactionHash(""); setNotice(""); }}
+              onChange={(event) => { setRecipient(event.target.value); setRecipientChecked(false); setRecipientNetworks([]); setReviewing(false); setTransactionHash(""); setNotice(""); }}
               placeholder="0x… recipient address" autoComplete="off" spellCheck={false} />
             {recipient && <button type="button" className="recipient-clear-button" onClick={() => { setRecipient(""); setRecipientChecked(false); setReviewing(false); setNotice(""); }} aria-label="Clear recipient"><Icon name="close" size={15} /></button>}
           </div>
-          <button type="button" className="secondary-button send-inspect-button" onClick={checkRecipient}><Icon name="shield" size={16} /> Check address format</button>
-          {recipientChecked && <div className={validAddress && !isHandle ? "recipient-check-state valid" : "recipient-check-state"}><Icon name={validAddress && !isHandle ? "check-circle" : "info"} size={16} /><span>{validAddress && !isHandle ? "Valid EVM address format — identity is not verified." : isHandle ? "Handle registry unavailable" : "Address format didn't pass validation."}</span></div>}
+          <button type="button" className="secondary-button send-inspect-button" onClick={() => void checkRecipient()} disabled={checkingRecipient}><Icon name={checkingRecipient ? "refresh" : "shield"} size={16} /> {checkingRecipient ? "Inspecting networks…" : "Inspect address networks"}</button>
+          {recipientChecked && <div className={validAddress && !isHandle ? "recipient-check-state valid" : "recipient-check-state"}><Icon name={validAddress && !isHandle ? "check-circle" : "info"} size={16} /><span>{validAddress && !isHandle ? "Valid EVM address format — network activity is an index hint, not identity verification." : isHandle ? "Handle registry unavailable" : "Address format didn't pass validation."}</span></div>}
+          {checkingRecipient && <div className="recipient-network-lookup"><span className="ta-search-spinner" /> Inspecting indexed EVM network activity…</div>}
+          {!!recipientNetworks.length && <div className="recipient-network-lookup"><strong>Indexed network activity</strong><div>{recipientNetworks.map((chain) => <span className="recipient-network-chip" key={chain}>{chain}</span>)}</div></div>}
 
           <div className="step-heading send-step-heading"><span className="step-number">02</span><div><h2>Choose an asset you own</h2><p>The selected asset determines the network. A direct send does not bridge between chains.</p></div></div>
           <label className="field-label" htmlFor="send-asset-select">Wallet asset and network</label>
