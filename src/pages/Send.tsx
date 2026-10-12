@@ -2,8 +2,8 @@ import { useRef, useState } from "react";
 import Icon from "../components/Icon";
 import { FIAT_CURRENCIES } from "../data/walletData";
 
-export default function Send({ onBack }: { onBack: () => void }) {
-  const [recipient, setRecipient] = useState("");
+export default function Send({ onBack, initialRecipient = "" }: { onBack: () => void; initialRecipient?: string }) {
+  const [recipient, setRecipient] = useState(initialRecipient);
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("INR");
   const [notice, setNotice] = useState("");
