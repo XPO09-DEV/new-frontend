@@ -50,6 +50,14 @@ function normalizeRecipient(recipient: string) {
   return recipient.trim().toLowerCase();
 }
 
+function triggerDashboardHaptic(duration = 6) {
+  try {
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate(duration);
+  } catch {
+    // Haptics are optional and never block wallet actions.
+  }
+}
+
 export default function Dashboard({
   selectedToken,
   onTokenChange,
@@ -195,7 +203,7 @@ export default function Dashboard({
     <div className="page-stack dashboard-page">
       <div className="page-intro wallet-greeting-intro">
         <h1 className="wallet-greeting">{walletGreeting(displayName)}</h1>
-        <button type="button" className="wallet-name-edit" aria-label="Edit wallet display name" title="Edit wallet name" onClick={() => { setNameInput(displayName); setShowNameEditor((open) => !open); }}>
+        <button type="button" className="wallet-name-edit" aria-label="Edit wallet display name" title="Edit wallet name" onClick={() => { triggerDashboardHaptic(); setNameInput(displayName); setShowNameEditor((open) => !open); }}>
           <Icon name="settings" size={15} />
         </button>
       </div>
@@ -224,7 +232,7 @@ export default function Dashboard({
       <section className="quick-actions-section" aria-label="Wallet actions">
         <div className="quick-action-grid">
           {quickActions.map((action) => (
-            <button className="quick-action" key={action.page} onClick={() => action.page === "contacts" ? setShowContacts(true) : onNavigate(action.page)} type="button">
+            <button className="quick-action" key={action.page} onClick={() => { triggerDashboardHaptic(); if (action.page === "contacts") setShowContacts(true); else onNavigate(action.page); }} type="button">
               <span className="quick-action-icon"><Icon name={action.icon} size={22} /></span>
               <span className="quick-action-copy"><strong>{action.label}</strong></span>
             </button>
@@ -239,7 +247,7 @@ export default function Dashboard({
             <h2 id="contacts-heading">Contacts</h2>
             <p>{contacts.length} saved {contacts.length === 1 ? "contact" : "contacts"}</p>
           </div>
-          <div className="contacts-header-actions"><button className="contacts-add-button" type="button" onClick={() => { setShowAddContact((open) => !open); setContactNotice(""); }}>
+          <div className="contacts-header-actions"><button className="contacts-add-button" type="button" onClick={() => { triggerDashboardHaptic(); setShowAddContact((open) => !open); setContactNotice(""); }}>
             <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
             {showAddContact ? "Close" : "Add contact"}
           </button><button className="contacts-close-button" type="button" onClick={() => setShowContacts(false)} aria-label="Close contacts"><Icon name="close" size={17} /></button></div>
@@ -292,7 +300,7 @@ export default function Dashboard({
                   <strong>{contact.name}</strong>
                   <small>{contact.recipient}</small>
                 </span>
-                <button className="contact-send-button" type="button" onClick={() => onSendToContact(contact.recipient)} aria-label={`Send to ${contact.name}`}>
+                <button className="contact-send-button" type="button" onClick={() => { triggerDashboardHaptic(); onSendToContact(contact.recipient); }} aria-label={`Send to ${contact.name}`}>
                   <Icon name="send" size={15} /><span>Send</span>
                 </button>
               </article>
