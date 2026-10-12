@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import {
   getAccountProfile,
   loginAccount,
@@ -20,7 +20,7 @@ export default function AccountGate({ onAuthenticated }: { onAuthenticated: (pro
   const [createdProfile, setCreatedProfile] = useState<AccountProfile | null>(null);
   const [copied, setCopied] = useState(false);
 
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setBusy(true);
