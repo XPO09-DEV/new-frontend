@@ -13,32 +13,21 @@ npm run dev
 
 Open the local URL printed by Vite.
 
-## Backend connection
+## Temporary frontend-only Ankr mode
 
-The frontend connects to the wallet-assets API through a configurable backend URL. Do not place an Ankr API key in a Vite variable or commit one to this repository.
+For local development, wallet balance discovery currently calls Ankr directly from the browser. **The API key is therefore exposed in the frontend bundle and browser network requests.** Use only a rotated/testing key for this temporary mode and restrict its allowed origins/usage where Ankr supports those controls. Never use this setup for a public production deployment.
 
-1. Copy `.env.example` to your untracked `.env.local`.
-2. Set `VITE_SUBTLEPAY_API_BASE_URL` to the backend origin if the API isn't reverse-proxied under the frontend's own origin.
-3. Set `VITE_SUBTLEPAY_WALLET_ASSETS_PATH` to the backend's wallet-assets route. It defaults to `/api/wallet/assets`.
-4. Keep `ANKR_API_KEY` in the backend's environment only and restart the frontend dev server after changing its environment.
+1. Create a local `.env.local` file in the project root (the file is ignored by Git).
+2. Add `VITE_ANKR_API_KEY=your_rotated_ankr_key` to that local file.
+3. Restart Vite after changing the file.
 
-### Wallet-assets endpoint contract
+Do not paste the real key into source files, `.env.example`, or a Git commit. The tracked example contains placeholders only. Before public release, move Ankr requests into your backend and keep the key in the server environment.
 
-The frontend issues:
-
-```http
-GET /api/wallet/assets?address=0x... 
-```
-
-A forced refresh also adds `refresh=true`. The request includes same-origin credentials so the backend can apply its own authentication/authorization rules.
-
-The response should be either an array of assets or an object containing `assets: [...]`. Preferred fields are `id`, `blockchain`, `chainLabel`, `tokenName`, `tokenSymbol`, `balance`, `balanceUsd`, `priceUsd`, `tokenDecimals`, `contractAddress`, `thumbnail`, `tokenType`, and optionally `balanceRawInteger`. The frontend also accepts the matching Ankr balance-item shape and normalizes it. The list is deduplicated and cached in the browser for 60 seconds; explicit refresh bypasses that cache.
-
-The backend should verify the caller's authorization, validate the wallet address, apply rate limits, keep provider secrets server-side, and return only the data allowed for that request. A public wallet address is not proof of ownership or identity.
+The direct client integration calls Ankr's multichain account-balance method with pagination and separately checks the native Monad balance. Successful wallet responses are cached in memory for 60 seconds; the explicit refresh action bypasses that cache. Provider coverage and availability determine which balances can be returned.
 
 ## Multichain search and charts
 
-The token-list search opens a dedicated full-screen discovery panel inside the current view. It supports indexed assets across the chains configured in `TokenAssetsWidget.tsx`, shows network and available contract metadata, and keeps market search separate from a wallet's actual holdings. Search coverage depends on the market indexer's listings; it cannot enumerate every contract on every chain.
+The token-list search opens a dedicated full-screen discovery panel inside the current view. It supports indexed assets across the chains configured in `TokenAssetsWidget.tsx`, shows network and available contract metadata, and keeps market search separate from actual wallet holdings. Search coverage depends on the market indexer's listings; it cannot enumerate every contract on every chain.
 
 Market prices are cached and refreshed at controlled intervals. Historical chart requests use longer cache windows for longer timeframes, abort when the selected asset/timeframe changes, and provide a retry action when history is temporarily unavailable. An indexed token without a supported market-history ID may display its balance without a chart.
 
@@ -48,6 +37,6 @@ The wallet card only displays assets returned for the connected wallet address. 
 
 The optional resume-consent prompt stores the last page and selected asset on the user's device only after consent. It is not analytics.
 
-## Provider credentials
+## Other provider credentials
 
-Any `VITE_*` variable is visible in browser code. Use local/demo keys only for local testing. Paid/private CoinGecko or CoinStats credentials should also be proxied through the backend in production, rather than shipped in the browser bundle.
+Any `VITE_*` variable is visible in browser code. CoinGecko and CoinStats keys provided through Vite variables are also browser-visible; proxy private/paid credentials through the backend before public deployment.
