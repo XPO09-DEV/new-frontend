@@ -62,9 +62,8 @@ interface AnkrAssetResponse {
   tokenType?: string;
 }
 
-const API_KEY = (import.meta.env.VITE_ANKR_API_KEY as string | undefined)?.trim() ?? "";
-const MULTICHAIN_URL = API_KEY ? `https://rpc.ankr.com/multichain/${encodeURIComponent(API_KEY)}` : "";
-const MONAD_RPC_URL = API_KEY ? `https://rpc.ankr.com/monad/${encodeURIComponent(API_KEY)}` : "";
+const API_BASE_URL = ((import.meta.env.VITE_SUBTLEPAY_API_BASE_URL as string | undefined) ?? "").trim().replace(/\/+$/, "");
+const WALLET_ASSETS_PATH = ((import.meta.env.VITE_SUBTLEPAY_WALLET_ASSETS_PATH as string | undefined) ?? "/api/wallet/assets").trim();
 const BALANCE_CACHE_TTL = 60_000;
 const balanceCache = new Map<string, { savedAt: number; assets: WalletAsset[] }>();
 
@@ -136,19 +135,6 @@ export async function readConnectedEvmWallet(): Promise<ConnectedWallet | null> 
   }
 }
 
-async function postAnkr<T>(url: string, method: string, params: Record<string, unknown>): Promise<T> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
-  });
-  if (!response.ok) throw new Error(`Ankr request failed (${response.status}). Please retry in a moment.`);
-  const payload = await response.json() as { error?: { message?: string }; result?: T };
-  if (payload.error) throw new Error(payload.error.message || "Ankr couldn't return wallet data for this address.");
-  if (payload.result == null) throw new Error("Ankr returned an empty wallet response.");
-  return payload.result;
-}
-
 function finiteNumber(value: unknown): number | null {
   if (value == null || value === "") return null;
   const number = Number(value);
@@ -181,110 +167,114 @@ function normalizeAnkrAsset(asset: AnkrAssetResponse): WalletAsset | null {
   };
 }
 
-async function fetchMonadNativeBalance(address: string): Promise<WalletAsset | null> {
-  if (!MONAD_RPC_URL) return null;
-  const response = await fetch(MONAD_RPC_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", method: "eth_getBalance", params: [address, "latest"], id: 1 }),
-  });
-  if (!response.ok) throw new Error(`Monad balance request failed (${response.status}).`);
-  const payload = await response.json() as { result?: string; error?: { message?: string } };
-  if (payload.error || typeof payload.result !== "string") throw new Error(payload.error?.message || "Monad balance unavailable.");
+/**
+ * Read indexed wallet holdings from Subtle Pay's backend.
+ * The backend is responsible for securely calling Ankr and normalizing its response.
+ * The frontend never embeds or sends an Ankr API key.
+ */
+function normalizeBackendAsset(value: unknown): WalletAsset | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as Record<string, unknown>;
 
-  let amount: number;
-  try {
-    amount = Number(BigInt(payload.result)) / 1e18;
-  } catch {
-    return null;
+  // Accept the normalized WalletAsset response from our backend.
+  if (
+    typeof item.id === "string" &&
+    typeof item.blockchain === "string" &&
+    typeof item.chainLabel === "string" &&
+    typeof item.tokenName === "string" &&
+    typeof item.tokenSymbol === "string"
+  ) {
+    const balance = finiteNumber(item.balance) ?? 0;
+    if (!(balance > 0)) return null;
+    return {
+      id: item.id,
+      blockchain: item.blockchain.toLowerCase(),
+      chainLabel: item.chainLabel,
+      tokenName: item.tokenName,
+      tokenSymbol: item.tokenSymbol.toUpperCase(),
+      balance,
+      balanceRawInteger: typeof item.balanceRawInteger === "string" && /^\\d+$/.test(item.balanceRawInteger) ? item.balanceRawInteger : undefined,
+      balanceUsd: finiteNumber(item.balanceUsd),
+      priceUsd: finiteNumber(item.priceUsd),
+      tokenDecimals: Math.max(0, Math.min(36, Math.trunc(finiteNumber(item.tokenDecimals) ?? 18))),
+      contractAddress: typeof item.contractAddress === "string" && item.contractAddress.trim() ? item.contractAddress.trim() : null,
+      thumbnail: typeof item.thumbnail === "string" && item.thumbnail ? item.thumbnail : null,
+      tokenType: typeof item.tokenType === "string" ? item.tokenType : "Token",
+    };
   }
-  if (!(amount > 0)) return null;
-  return {
-    id: "monad:native:mon",
-    blockchain: "monad",
-    chainLabel: "Monad",
-    tokenName: "Monad",
-    tokenSymbol: "MON",
-    balance: amount,
-    balanceRawInteger: (BigInt(payload.result)).toString(),
-    balanceUsd: null,
-    priceUsd: null,
-    tokenDecimals: 18,
-    contractAddress: null,
-    thumbnail: null,
-    tokenType: "Native coin",
-  };
+
+  // Also accept the normalized Ankr asset shape if the backend forwards that shape.
+  return normalizeAnkrAsset(value as AnkrAssetResponse);
 }
 
-/**
- * Read wallet holdings via Ankr Advanced API and add Monad native balance
- * through Ankr's Monad JSON-RPC endpoint. Data is cached briefly to limit requests.
- * API keys in Vite variables are visible to browser users; move this call behind
- * the backend before deploying a production wallet.
- */
+async function loadWalletAssetsFromBackend(address: string, force: boolean): Promise<WalletAsset[]> {
+  const path = WALLET_ASSETS_PATH.startsWith("/") ? WALLET_ASSETS_PATH : `/${WALLET_ASSETS_PATH}`;
+  const url = new URL(`${API_BASE_URL}${path}`, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+  url.searchParams.set("address", address);
+  if (force) url.searchParams.set("refresh", "true");
+
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), {
+      method: "GET",
+      credentials: "include",
+      headers: { accept: "application/json" },
+      cache: force ? "no-store" : "default",
+    });
+  } catch {
+    throw new Error("Couldn't reach the Subtle Pay backend. Check VITE_SUBTLEPAY_API_BASE_URL and that the backend is running.");
+  }
+
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error("The backend didn't authorize this wallet-assets request. Check the backend session and endpoint permissions.");
+    }
+    if (response.status === 429) throw new Error("Wallet assets are temporarily rate-limited. Please wait before refreshing again.");
+    if (response.status >= 500) throw new Error("The wallet-assets backend is temporarily unavailable. Your funds are not affected.");
+    throw new Error(`Wallet-assets endpoint returned HTTP ${response.status}. Check VITE_SUBTLEPAY_WALLET_ASSETS_PATH.`);
+  }
+
+  const payload: unknown = await response.json();
+  let rows: unknown[] | null = null;
+  if (Array.isArray(payload)) {
+    rows = payload;
+  } else if (payload && typeof payload === "object") {
+    const envelope = payload as Record<string, unknown>;
+    if (Array.isArray(envelope.assets)) rows = envelope.assets;
+    else if (Array.isArray(envelope.data)) rows = envelope.data;
+    else if (envelope.data && typeof envelope.data === "object" && Array.isArray((envelope.data as Record<string, unknown>).assets)) {
+      rows = (envelope.data as Record<string, unknown>).assets as unknown[];
+    }
+    if (envelope.error && typeof envelope.error === "string") throw new Error(envelope.error);
+    if (envelope.success === false && typeof envelope.message === "string") throw new Error(envelope.message);
+  }
+  if (!rows) throw new Error("Backend response must be an assets array or an object containing { assets: [...] }.");
+
+  const unique = new Map<string, WalletAsset>();
+  for (const row of rows) {
+    const asset = normalizeBackendAsset(row);
+    if (!asset) continue;
+    const previous = unique.get(asset.id);
+    if (!previous || (asset.balanceUsd ?? 0) > (previous.balanceUsd ?? 0)) unique.set(asset.id, asset);
+  }
+  return [...unique.values()].sort((a, b) => (b.balanceUsd ?? 0) - (a.balanceUsd ?? 0));
+}
+
 export async function fetchWalletAssets(address: string, force = false): Promise<WalletAsset[]> {
   const normalizedAddress = address.trim();
   if (!isValidEvmAddress(normalizedAddress)) throw new Error("Enter a valid EVM wallet address.");
-  if (!API_KEY || !MULTICHAIN_URL) {
-    throw new Error("Ankr is not configured. Add VITE_ANKR_API_KEY to your local .env.local file, then restart the dev server.");
-  }
 
   const cacheKey = normalizedAddress.toLowerCase();
   const cached = balanceCache.get(cacheKey);
   if (!force && cached && Date.now() - cached.savedAt < BALANCE_CACHE_TTL) return cached.assets;
 
-  const [accountResult, monadResult] = await Promise.allSettled([
-    (async () => {
-      const all: WalletAsset[] = [];
-      let pageToken: string | undefined;
-      let pages = 0;
-      do {
-        const params: Record<string, unknown> = {
-          walletAddress: normalizedAddress,
-          nativeFirst: true,
-          onlyWhitelisted: false,
-          pageSize: 100,
-        };
-        if (pageToken) params.pageToken = pageToken;
-        const result = await postAnkr<{ assets?: AnkrAssetResponse[]; nextPageToken?: string }>(
-          MULTICHAIN_URL, "ankr_getAccountBalance", params,
-        );
-        all.push(...(result.assets ?? []).map(normalizeAnkrAsset).filter((asset): asset is WalletAsset => asset !== null));
-        pageToken = result.nextPageToken || undefined;
-        pages += 1;
-      } while (pageToken && pages < 5);
-      return all;
-    })(),
-    fetchMonadNativeBalance(normalizedAddress),
-  ]);
-
-  const assets: WalletAsset[] = [];
-  let sourceSucceeded = false;
-  if (accountResult.status === "fulfilled") {
-    assets.push(...accountResult.value);
-    sourceSucceeded = true;
-  }
-  if (monadResult.status === "fulfilled") {
-    if (monadResult.value) assets.push(monadResult.value);
-    sourceSucceeded = true;
-  }
-  if (!sourceSucceeded) {
-    const reason = accountResult.status === "rejected" ? accountResult.reason : monadResult.status === "rejected" ? monadResult.reason : null;
-    throw reason instanceof Error ? reason : new Error("Couldn't load wallet assets. Check the network and Ankr configuration.");
-  }
-
-  const unique = new Map<string, WalletAsset>();
-  for (const asset of assets) {
-    const existing = unique.get(asset.id);
-    if (!existing || (asset.balanceUsd ?? 0) > (existing.balanceUsd ?? 0)) unique.set(asset.id, asset);
-  }
-  const normalized = [...unique.values()].sort((a, b) => (b.balanceUsd ?? 0) - (a.balanceUsd ?? 0));
-  balanceCache.set(cacheKey, { savedAt: Date.now(), assets: normalized });
+  const assets = await loadWalletAssetsFromBackend(normalizedAddress, force);
+  balanceCache.set(cacheKey, { savedAt: Date.now(), assets });
   if (balanceCache.size > 80) {
     const oldestKey = balanceCache.keys().next().value;
     if (oldestKey) balanceCache.delete(oldestKey);
   }
-  return normalized;
+  return assets;
 }
 
 export async function copyText(text: string): Promise<void> {
