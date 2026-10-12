@@ -462,3 +462,5 @@
 .ta-hero-empty button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:33px; padding:8px 11px; border:1px solid var(--ta-border); border-radius:9px; background:#fff; color:var(--ta-text); font:600 10px/1 "Inter",sans-serif; }
 .ta-hero-empty button:hover { background:#f6f8fb; }
 .ta-hero-empty .ta-hero-search-link { border-color:transparent; background:transparent; color:var(--ta-blue); }
+
+.ta-contract-address { display:block; margin-top:3px; overflow:hidden; color:#9aa3b2; font:450 8px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; text-overflow:ellipsis; white-space:nowrap; }
