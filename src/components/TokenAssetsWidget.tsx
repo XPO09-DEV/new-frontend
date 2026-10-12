@@ -494,9 +494,10 @@ interface ChartProps {
   onHover: (i: number | null) => void;
   animKey: string;
   currency: string;
+  onRetry?: () => void;
 }
 
-function Chart({ pts, tf, error, hover, onHover, animKey, currency }: ChartProps) {
+function Chart({ pts, tf, error, hover, onHover, animKey, currency, onRetry }: ChartProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(300);
   const [range, setRange] = useState({ start: 0, end: Math.max(1, (pts?.length ?? 2) - 1) });
@@ -675,7 +676,7 @@ function Chart({ pts, tf, error, hover, onHover, animKey, currency }: ChartProps
           </svg>
         )}
         {!geo && !error && <div className="ta-skel ta-chart-skel" />}
-        {error && <div className="ta-chart-err">{error}</div>}
+        {error && <div className="ta-chart-err"><span>{error}</span>{onRetry && <button type="button" onClick={onRetry}>Retry chart</button>}</div>}
       </div>
       <div className="ta-axis" aria-hidden="true">
         <span>{axis[0] ?? "Earlier"}</span>
@@ -930,9 +931,10 @@ export default function TokenAssetsWidget({
   const inflight = useRef<Set<string>>(new Set());
   const [limitedAll, setLimitedAll] = useState(false);
   const [chartErr, setChartErr] = useState<string | null>(null);
+  const [chartRetry, setChartRetry] = useState(0);
 
   const ensureChart = useCallback(
-    async (id: string, t: Timeframe) => {
+    async (id: string, t: Timeframe, signal?: AbortSignal) => {
       const key = `${id}:${t}:${currency}`;
       const ttl = t === "1D" ? 60_000 : t === "1W" ? 240_000 : t === "1M" ? 480_000 : 600_000;
       if (inflight.current.has(key)) return;
@@ -941,12 +943,13 @@ export default function TokenAssetsWidget({
       try {
         let pts: Point[];
         try {
-          pts = await fetchChart(baseUrl, headers, id, currency, DAYS[t]);
+          pts = await fetchChart(baseUrl, headers, id, currency, DAYS[t], signal);
         } catch (e) {
           if (t !== "All") throw e;
-          pts = await fetchChart(baseUrl, headers, id, currency, 365);
+          pts = await fetchChart(baseUrl, headers, id, currency, 365, signal);
           setLimitedAll(true);
         }
+        if (signal?.aborted) return;
         fetchedAt.current[key] = Date.now();
         setCharts((c) => ({ ...c, [key]: pts }));
       } finally {
@@ -963,20 +966,21 @@ export default function TokenAssetsWidget({
       return;
     }
     let alive = true;
+    const controller = new AbortController();
     const chartId = selected?.chartId ?? selected?.id ?? "";
     if (!chartId || (selected?.id.includes(":") && !selected.chartId)) {
       setChartErr("Historical price history isn't available for this indexed wallet asset yet. Its current balance remains available.");
-      return () => { alive = false; };
+      return () => { alive = false; controller.abort(); };
     }
     setChartErr(null);
-    ensureChart(chartId, tf).catch((error) => {
-      if (!alive) return;
+    ensureChart(chartId, tf, controller.signal).catch((error) => {
+      if (!alive || controller.signal.aborted) return;
       setChartErr(error instanceof HttpError && error.status === 429
-        ? "Historical prices are temporarily rate-limited. Please retry shortly; spot prices continue updating."
+        ? "Historical prices are temporarily rate-limited. Please retry shortly; your last cached data remains available when possible."
         : "Historical price history is temporarily unavailable. Please retry in a moment.");
     });
-    return () => { alive = false; };
-  }, [selId, tf, ensureChart, updatedAt, selected?.chartId]);
+    return () => { alive = false; controller.abort(); };
+  }, [selId, tf, ensureChart, updatedAt, selected?.chartId, chartRetry]);
 
   /* ---- chart view model ---- */
   const chartDataId = selected?.chartId ?? selected?.id;
@@ -1142,7 +1146,7 @@ export default function TokenAssetsWidget({
               )}
             </div>
 
-            <Chart pts={view} tf={tf} error={!view ? chartErr : null} hover={hover} onHover={setHover} animKey={`${selected.id}:${tf}:${currency}`} currency={currency} />
+            <Chart pts={view} tf={tf} error={!view ? chartErr : null} hover={hover} onHover={setHover} animKey={`${selected.id}:${tf}:${currency}`} currency={currency} onRetry={selected.chartId || !selected.id.includes(":") ? () => { triggerHaptic(10); setChartRetry((value) => value + 1); } : undefined} />
           </>
         ) : (
           <div className="ta-hero-empty">
@@ -1255,7 +1259,7 @@ export default function TokenAssetsWidget({
                       <div className="ta-search-preview-tfs" role="tablist" aria-label="Chart timeframe">
                         {TFS.map((frame) => <button key={frame} type="button" role="tab" aria-selected={tf === frame} className={tf === frame ? "on" : ""} onClick={() => { triggerHaptic(5); setTf(frame); setHover(null); }}>{frame}</button>)}
                       </div>
-                      <Chart pts={view} tf={tf} error={chartErr} hover={hover} onHover={setHover} animKey={`${selected.id}:${tf}:search`} currency={currency} />
+                      <Chart pts={view} tf={tf} error={chartErr} hover={hover} onHover={setHover} animKey={`${selected.id}:${tf}:search`} currency={currency} onRetry={() => { triggerHaptic(10); setChartRetry((value) => value + 1); }} />
                     </section>
                   )}
 
