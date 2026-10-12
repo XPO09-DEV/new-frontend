@@ -303,6 +303,7 @@ export default function Dashboard({
         visibleHeld={3}
         walletConnected={Boolean(walletAddress)}
         pinned={[]}
+        onConnectWallet={onConnectWallet}
         holdings={walletAssets.map((asset) => ({
           id: asset.id,
           amount: asset.balance,
