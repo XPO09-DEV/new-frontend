@@ -64,6 +64,7 @@ export default function Dashboard({
   displayName: string;
 }) {
   const [contacts, setContacts] = useState<SavedContact[]>(readSavedContacts);
+  const [showContacts, setShowContacts] = useState(false);
   const [contactSearch, setContactSearch] = useState("");
   const [showAddContact, setShowAddContact] = useState(false);
   const [contactName, setContactName] = useState("");
@@ -71,10 +72,11 @@ export default function Dashboard({
   const [contactNotice, setContactNotice] = useState("");
   const [isImportingContacts, setIsImportingContacts] = useState(false);
 
-  const quickActions: { page: PageId; label: string; icon: "send" | "receive" | "merchant" }[] = [
+  const quickActions: { page: PageId | "contacts"; label: string; icon: "send" | "receive" | "merchant" | "users" }[] = [
     { page: "send", label: "Send", icon: "send" },
     { page: "receive", label: "Receive", icon: "receive" },
     { page: "merchant", label: "Merchant", icon: "merchant" },
+    { page: "contacts", label: "Contacts", icon: "users" },
   ];
 
   useEffect(() => {
@@ -178,7 +180,7 @@ export default function Dashboard({
       <section className="quick-actions-section" aria-label="Wallet actions">
         <div className="quick-action-grid">
           {quickActions.map((action) => (
-            <button className="quick-action" key={action.page} onClick={() => onNavigate(action.page)} type="button">
+            <button className="quick-action" key={action.page} onClick={() => action.page === "contacts" ? setShowContacts(true) : onNavigate(action.page)} type="button">
               <span className="quick-action-icon"><Icon name={action.icon} size={22} /></span>
               <span className="quick-action-copy"><strong>{action.label}</strong></span>
             </button>
@@ -186,17 +188,17 @@ export default function Dashboard({
         </div>
       </section>
 
-      <section className="contacts-section panel" aria-labelledby="contacts-heading">
+      {showContacts && <div className="contacts-modal-backdrop" role="presentation" onClick={() => setShowContacts(false)}><section className="contacts-section panel contacts-modal" aria-labelledby="contacts-heading" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <div className="contacts-header">
           <div>
             <div className="section-kicker">PAYMENTS</div>
             <h2 id="contacts-heading">Contacts</h2>
             <p>{contacts.length} saved {contacts.length === 1 ? "contact" : "contacts"}</p>
           </div>
-          <button className="contacts-add-button" type="button" onClick={() => { setShowAddContact((open) => !open); setContactNotice(""); }}>
+          <div className="contacts-header-actions"><button className="contacts-add-button" type="button" onClick={() => { setShowAddContact((open) => !open); setContactNotice(""); }}>
             <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
             {showAddContact ? "Close" : "Add contact"}
-          </button>
+          </button><button className="contacts-close-button" type="button" onClick={() => setShowContacts(false)} aria-label="Close contacts"><Icon name="close" size={17} /></button></div>
         </div>
 
         <div className="contacts-toolbar">
@@ -253,7 +255,7 @@ export default function Dashboard({
             ))}
           </div>
         )}
-      </section>
+      </section></div>}
 
       <TokenAssetsWidget apiKey={import.meta.env.VITE_COINGECKO_API_KEY} visibleHeld={3} />
       <div className="mobile-nav-spacer" />
