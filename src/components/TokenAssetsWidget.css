@@ -453,3 +453,12 @@
 .ta-no-wallet-assets > span:last-of-type { max-width:330px; color:#8f98a8; font:450 10px/1.55 "Inter",sans-serif; }
 .ta-no-wallet-assets button { display:inline-flex; min-height:34px; align-items:center; justify-content:center; margin-top:3px; padding:8px 13px; border:1px solid #dfe5f0; border-radius:10px; background:#fff; color:#334462; font:650 10px/1 "Inter",sans-serif; }
 .ta-no-wallet-assets button:hover { background:#f6f8fc; border-color:#d3dceb; }
+
+
+.ta-hero-empty { display:flex; min-height:190px; flex-direction:column; align-items:flex-start; justify-content:center; gap:9px; padding:20px 4px 22px; }
+.ta-hero-empty-icon { display:grid; width:38px; height:38px; place-items:center; border-radius:12px; background:var(--ta-soft); color:var(--ta-muted); font:500 22px/1 "Inter",sans-serif; }
+.ta-hero-empty strong { color:var(--ta-text); font:650 14px/1.25 "Inter",sans-serif; letter-spacing:-.025em; }
+.ta-hero-empty > span:not(.ta-hero-empty-icon) { max-width:370px; color:var(--ta-muted); font:450 11px/1.55 "Inter",sans-serif; }
+.ta-hero-empty button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:33px; padding:8px 11px; border:1px solid var(--ta-border); border-radius:9px; background:#fff; color:var(--ta-text); font:600 10px/1 "Inter",sans-serif; }
+.ta-hero-empty button:hover { background:#f6f8fb; }
+.ta-hero-empty .ta-hero-search-link { border-color:transparent; background:transparent; color:var(--ta-blue); }
