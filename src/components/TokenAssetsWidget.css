@@ -466,3 +466,12 @@
 .ta-contract-address { display:block; margin-top:3px; overflow:hidden; color:#9aa3b2; font:450 8px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; text-overflow:ellipsis; white-space:nowrap; }
 
 .ta-assets-safety-note { margin:8px 2px 4px; color:#9099a9; font:450 9px/1.5 "Inter",sans-serif; }
+
+
+/* Clear, accessible retry action for failed history requests. */
+.ta-chart-err { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; }
+.ta-chart-err > span { max-width: 320px; }
+.ta-chart-err > button { min-height: 29px; padding: 7px 11px; border: 1px solid #e1e6ef; border-radius: 8px; background: #fff; color: #35445e; font: 600 10px/1 "Inter", sans-serif; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+.ta-chart-err > button:hover { border-color: #cbd5e3; background: #f8f9fc; }
+.ta-chart-err > button:active { transform: scale(.98); }
+@media (prefers-reduced-motion: reduce) { .ta-chart-err > button { transition: none; } }
