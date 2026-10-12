@@ -319,7 +319,7 @@ export function isSameNetwork(sourceChainId: string | null | undefined, destinat
 }
 
 
-function chainForAsset(asset: WalletAsset) {
+export function getWalletAssetNetwork(asset: WalletAsset) {
   return SUPPORTED_EVM_NETWORKS.find((network) => network.ankrName === asset.blockchain);
 }
 
@@ -361,7 +361,7 @@ export async function sendEvmAssetTransaction(request: SendTransactionRequest): 
   if (!isValidEvmAddress(walletAddress)) throw new Error("Connect a valid EVM wallet before sending.");
   if (!isValidEvmAddress(recipient)) throw new Error("Enter a valid 0x wallet address. Account handles need the account directory backend.");
   if (walletAddress.toLowerCase() === recipient.toLowerCase()) throw new Error("Choose a different recipient address.");
-  const network = chainForAsset(asset);
+  const network = getWalletAssetNetwork(asset);
   if (!network) throw new Error(`Sending from ${asset.chainLabel} is not supported yet. No transaction has been sent.`);
   const units = amountToBaseUnits(amount, asset.tokenDecimals);
   if (units <= 0n) throw new Error("Amount must be greater than zero.");
@@ -392,9 +392,6 @@ export async function sendEvmAssetTransaction(request: SendTransactionRequest): 
     }
   }
 
-  const nativeAsset = asset.contractAddress
-    ? null
-    : asset;
   const tx: Record<string, string> = { from: walletAddress, to: asset.contractAddress ?? recipient };
   if (asset.contractAddress) {
     const recipientWord = recipient.slice(2).toLowerCase().padStart(64, "0");
