@@ -338,6 +338,7 @@ export default function App() {
             walletError={walletError}
             onConnectWallet={connectWallet}
             onCopyAddress={copyWalletAddress}
+            onRefreshWallet={() => { if (walletAddress) void refreshWallet(walletAddress, true); }}
             onDisconnectWallet={disconnectWallet}
           />}
           {activePage === "send" && <Send
