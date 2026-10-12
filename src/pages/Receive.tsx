@@ -18,7 +18,7 @@ export default function Receive({
   onConnectWallet?: () => void;
 }) {
   const [notice, setNotice] = useState("");
-  const [selectedNetworkId, setSelectedNetworkId] = useState(() =>
+  const [selectedNetworkId, setSelectedNetworkId] = useState<string>(() =>
     SUPPORTED_EVM_NETWORKS.find((network) => network.chainId === walletChainId?.toLowerCase())?.id ?? "monad"
   );
 
