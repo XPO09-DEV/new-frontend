@@ -3,7 +3,7 @@ import type { PageId } from "../components/BottomNav";
 import Icon from "../components/Icon";
 import WalletCard from "../components/WalletCard";
 import TokenAssetsWidget from "../components/TokenAssetsWidget";
-import { type TokenSymbol } from "../data/walletData";
+import type { WalletAsset, WalletStatus } from "../services/walletService";
 
 type SavedContact = {
   id: string;
@@ -36,10 +36,10 @@ function readSavedContacts(): SavedContact[] {
 
 function walletGreeting(displayName: string) {
   const name = displayName.trim();
-  if (!name) return "Your wallet";
+  if (!name) return "Wallet 1";
   if (name.includes("@")) return name.toLowerCase();
   const firstName = name.split(/\s+/)[0].toLowerCase().replace(/[^a-z0-9._-]/g, "");
-  return firstName ? `${firstName}@monad` : "Your wallet";
+  return firstName ? `${firstName}@monad` : "Wallet 1";
 }
 
 function contactInitials(name: string) {
@@ -56,14 +56,34 @@ export default function Dashboard({
   onNavigate,
   onSendToContact,
   displayName,
+  onDisplayNameChange,
+  walletAddress,
+  walletChainId,
+  walletAssets,
+  walletStatus,
+  walletError,
+  onConnectWallet,
+  onCopyAddress,
+  onDisconnectWallet,
 }: {
-  selectedToken: TokenSymbol;
-  onTokenChange: (token: TokenSymbol) => void;
+  selectedToken: string;
+  onTokenChange: (token: string) => void;
   onNavigate: (page: PageId) => void;
   onSendToContact: (recipient: string) => void;
   displayName: string;
+  onDisplayNameChange: (name: string) => void;
+  walletAddress: string | null;
+  walletChainId: string | null;
+  walletAssets: WalletAsset[];
+  walletStatus: WalletStatus;
+  walletError: string | null;
+  onConnectWallet: () => void;
+  onCopyAddress: () => void;
+  onDisconnectWallet: () => void;
 }) {
   const [contacts, setContacts] = useState<SavedContact[]>(readSavedContacts);
+  const [showNameEditor, setShowNameEditor] = useState(false);
+  const [nameInput, setNameInput] = useState(displayName);
   const [showContacts, setShowContacts] = useState(false);
   const [contactSearch, setContactSearch] = useState("");
   const [showAddContact, setShowAddContact] = useState(false);
@@ -173,9 +193,30 @@ export default function Dashboard({
     <div className="page-stack dashboard-page">
       <div className="page-intro wallet-greeting-intro">
         <h1 className="wallet-greeting">{walletGreeting(displayName)}</h1>
+        <button type="button" className="wallet-name-edit" aria-label="Edit wallet display name" title="Edit wallet name" onClick={() => { setNameInput(displayName); setShowNameEditor((open) => !open); }}>
+          <Icon name="settings" size={15} />
+        </button>
       </div>
+      {showNameEditor && (
+        <form className="wallet-name-editor" onSubmit={(event) => { event.preventDefault(); onDisplayNameChange(nameInput.trim()); setShowNameEditor(false); }}>
+          <label htmlFor="wallet-display-name">Wallet display name</label>
+          <input id="wallet-display-name" value={nameInput} onChange={(event) => setNameInput(event.target.value)} placeholder="Wallet 1 or Anirban Sarkar" maxLength={80} autoComplete="nickname" />
+          <p>A name like “Anirban Sarkar” displays as anirban@monad. Leave it blank to use Wallet 1.</p>
+          <div><button type="button" className="secondary-button" onClick={() => { setNameInput(""); onDisplayNameChange(""); setShowNameEditor(false); }}>Use Wallet 1</button><button type="submit" className="primary-button">Save name</button></div>
+        </form>
+      )}
 
-      <WalletCard selectedToken={selectedToken} onTokenChange={onTokenChange} />
+      <WalletCard
+        selectedToken={selectedToken}
+        onTokenChange={onTokenChange}
+        walletAddress={walletAddress}
+        walletAssets={walletAssets}
+        walletStatus={walletStatus}
+        walletError={walletError}
+        onConnectWallet={onConnectWallet}
+        onCopyAddress={onCopyAddress}
+        onDisconnectWallet={onDisconnectWallet}
+      />
 
       <section className="quick-actions-section" aria-label="Wallet actions">
         <div className="quick-action-grid">
@@ -257,7 +298,23 @@ export default function Dashboard({
         )}
       </section></div>}
 
-      <TokenAssetsWidget apiKey={import.meta.env.VITE_COINGECKO_API_KEY} visibleHeld={3} />
+      <TokenAssetsWidget
+        apiKey={import.meta.env.VITE_COINGECKO_API_KEY}
+        visibleHeld={3}
+        walletConnected={Boolean(walletAddress)}
+        pinned={walletAddress ? [] : undefined}
+        holdings={walletAssets.map((asset) => ({
+          id: asset.id,
+          amount: asset.balance,
+          symbol: asset.tokenSymbol,
+          name: asset.tokenName,
+          image: asset.thumbnail,
+          price: asset.priceUsd,
+          valueUsd: asset.balanceUsd,
+          network: asset.chainLabel,
+          contractAddress: asset.contractAddress,
+        }))}
+      />
       <div className="mobile-nav-spacer" />
     </div>
   );
