@@ -721,7 +721,6 @@ export default function TokenAssetsWidget({
   holdings = EMPTY_HOLDINGS,
   walletConnected: walletConnectedProp = false,
   pinned = DEFAULT_PINNED,
-  apiKey,
   baseUrl = getSubtlePayApiBaseUrl(),
   currency: currencyProp,
   refreshMs = 120000,
