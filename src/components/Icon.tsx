@@ -5,7 +5,7 @@ export type IconName =
   | "bell" | "chevron-down" | "copy" | "check" | "clock" | "shield" | "document" | "download" | "scan" | "upload"
   | "settings" | "user" | "fingerprint" | "refresh" | "arrow-left" | "search" | "close" | "globe" | "building"
   | "trend-up" | "info" | "receipt" | "arrow-right" | "alert" | "lock" | "file" | "link" | "check-circle"
-  | "logout" | "smartphone" | "credit-card" | "key" | "sliders" | "chevrons-up-down" | "qr";
+  | "logout" | "users" | "smartphone" | "credit-card" | "key" | "sliders" | "chevrons-up-down" | "qr";
 
 const glyphs: Record<IconName, ReactNode> = {
   wallet: <><rect x="3" y="5" width="18" height="15" rx="3" /><path d="M3 9h18" /><path d="M16 14h.01" /><path d="M6 5V3h12v2" /></>,
@@ -45,6 +45,7 @@ const glyphs: Record<IconName, ReactNode> = {
   link: <><path d="M10 13a5 5 0 0 0 7.5 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1" /><path d="M14 11a5 5 0 0 0-7.5 0l-2 2a5 5 0 0 0 7.1 7.1l1.1-1.1" /></>,
   "check-circle": <><circle cx="12" cy="12" r="10" /><path d="m7 12 3 3 7-7" /></>,
   logout: <><path d="M10 17l5-5-5-5M15 12H3" /><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7" /></>,
+  users: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 5.5a3.5 3.5 0 0 1 0 6.8M18 14a5.5 5.5 0 0 1 3.5 5.2" /></>,
   smartphone: <><rect x="6" y="2" width="12" height="20" rx="2" /><path d="M11 18h2" /></>,
   "credit-card": <><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20M6 15h4" /></>,
   key: <><circle cx="8" cy="15" r="5" /><path d="m12 12 8-8 2 2-2 2 2 2-3 3-2-2-2 2" /></>,
