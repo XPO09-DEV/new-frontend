@@ -323,6 +323,13 @@ async function fetchMarkets(
   }
 }
 
+function getCachedMarketTimestamp(base: string, ids: string[], currency: string): number | null {
+  if (ids.length === 0) return null;
+  const stableIds = [...new Set(ids)].sort();
+  const key = `${base}|${currency}|${stableIds.join(",")}`;
+  return MARKET_PRICE_CACHE.get(key)?.savedAt ?? null;
+}
+
 async function searchMultichainAssets(base: string, headers: Record<string, string>, query: string, signal: AbortSignal): Promise<SearchCoin[]> {
   const normalizedQuery = query.trim().toLowerCase();
   const cacheKey = `${base}|${normalizedQuery}`;
@@ -822,8 +829,10 @@ export default function TokenAssetsWidget({
         if (ac.signal.aborted) return;
         setMarket(m);
         setStatus("ready");
-        setError(null);
-        setUpdatedAt(Date.now());
+        const sourceTimestamp = getCachedMarketTimestamp(baseUrl, ids, currency);
+        const cacheIsStale = sourceTimestamp != null && Date.now() - sourceTimestamp > MARKET_CACHE_TTL;
+        setError(cacheIsStale ? "Price service is unavailable; showing the last cached market data." : null);
+        setUpdatedAt(sourceTimestamp ?? Date.now());
       } catch (e) {
         if (ac.signal.aborted) return;
         setError(errMsg(e));
@@ -1130,10 +1139,18 @@ export default function TokenAssetsWidget({
             <Chart pts={view} tf={tf} error={!view ? chartErr : null} hover={hover} onHover={setHover} animKey={`${selected.id}:${tf}:${currency}`} currency={currency} />
           </>
         ) : (
-          <div className="ta-skel" style={{ height: 190 }} />
+          <div className="ta-hero-empty">
+            <span className="ta-hero-empty-icon">◈</span>
+            <strong>{walletConnected ? "No supported asset to chart" : "Your wallet, your assets"}</strong>
+            <span>{walletConnected ? "No indexed positive balances were found for the connected address." : "Connect a wallet to view assets you own, or search the market without connecting one."}</span>
+            {!walletConnected && onConnectWallet && <button type="button" onClick={() => { triggerHaptic(); onConnectWallet(); }}>Connect wallet</button>}
+            <button type="button" className="ta-hero-search-link" onClick={() => { triggerHaptic(); setSearchQuery(""); setSearchResults([]); setSearchSelected(null); setSearchNetworkFilter("all"); setSearchOpen(true); }}>
+              Search market assets <span>↗</span>
+            </button>
+          </div>
         )}
 
-        <div className="ta-tfs" role="tablist" aria-label="Timeframe" style={{ ["--n" as string]: TFS.length, ["--i" as string]: TFS.indexOf(tf) }}>
+        {selected && <div className="ta-tfs" role="tablist" aria-label="Timeframe" style={{ ["--n" as string]: TFS.length, ["--i" as string]: TFS.indexOf(tf) }}>
           {TFS.map((t) => (
             <button
               key={t}
@@ -1145,7 +1162,8 @@ export default function TokenAssetsWidget({
               {t}
             </button>
           ))}
-        </div>
+        </div>}
+
       </div>
 
       {status === "error" && (
