@@ -308,7 +308,6 @@ export default function Dashboard({
       </section></div>}
 
       <TokenAssetsWidget
-        apiKey={import.meta.env.VITE_COINGECKO_API_KEY}
         visibleHeld={3}
         walletConnected={Boolean(walletAddress)}
         pinned={[]}
