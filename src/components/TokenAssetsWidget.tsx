@@ -937,7 +937,15 @@ export default function TokenAssetsWidget({
   const ensureChart = useCallback(
     async (id: string, t: Timeframe, signal?: AbortSignal) => {
       const key = `${id}:${t}:${currency}`;
-      const ttl = t === "1D" ? 60_000 : t === "1W" ? 240_000 : t === "1M" ? 480_000 : 600_000;
+      const chartTtl: Record<Timeframe, number> = {
+        "1D": 60_000,
+        "1W": 240_000,
+        "1M": 480_000,
+        "3M": 15 * 60_000,
+        "1Y": 30 * 60_000,
+        All: 30 * 60_000,
+      };
+      const ttl = chartTtl[t];
       if (inflight.current.has(key)) return;
       if (fetchedAt.current[key] && Date.now() - fetchedAt.current[key] < ttl) return;
       const requestId = ++chartRequestSequence.current;
