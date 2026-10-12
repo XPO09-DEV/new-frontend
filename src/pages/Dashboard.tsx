@@ -302,7 +302,7 @@ export default function Dashboard({
         apiKey={import.meta.env.VITE_COINGECKO_API_KEY}
         visibleHeld={3}
         walletConnected={Boolean(walletAddress)}
-        pinned={walletAddress ? [] : undefined}
+        pinned={[]}
         holdings={walletAssets.map((asset) => ({
           id: asset.id,
           amount: asset.balance,
@@ -313,6 +313,7 @@ export default function Dashboard({
           valueUsd: asset.balanceUsd,
           network: asset.chainLabel,
           contractAddress: asset.contractAddress,
+          marketId: asset.contractAddress ? undefined : ({ eth: "ethereum", bsc: "binancecoin", polygon: "polygon-ecosystem-token", arbitrum: "arbitrum", optimism: "optimism", avalanche: "avalanche-2", monad: "monad" } as Record<string, string>)[asset.blockchain],
         }))}
       />
       <div className="mobile-nav-spacer" />
