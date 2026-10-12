@@ -928,7 +928,8 @@ export default function TokenAssetsWidget({
   /* ---- chart for the selected token (cached) ---- */
   const [charts, setCharts] = useState<Record<string, Point[]>>({});
   const fetchedAt = useRef<Record<string, number>>({});
-  const inflight = useRef<Set<string>>(new Set());
+  const inflight = useRef<Map<string, number>>(new Map());
+  const chartRequestSequence = useRef(0);
   const [limitedAll, setLimitedAll] = useState(false);
   const [chartErr, setChartErr] = useState<string | null>(null);
   const [chartRetry, setChartRetry] = useState(0);
@@ -939,7 +940,8 @@ export default function TokenAssetsWidget({
       const ttl = t === "1D" ? 60_000 : t === "1W" ? 240_000 : t === "1M" ? 480_000 : 600_000;
       if (inflight.current.has(key)) return;
       if (fetchedAt.current[key] && Date.now() - fetchedAt.current[key] < ttl) return;
-      inflight.current.add(key);
+      const requestId = ++chartRequestSequence.current;
+      inflight.current.set(key, requestId);
       try {
         let pts: Point[];
         try {
@@ -953,7 +955,7 @@ export default function TokenAssetsWidget({
         fetchedAt.current[key] = Date.now();
         setCharts((c) => ({ ...c, [key]: pts }));
       } finally {
-        inflight.current.delete(key);
+        if (inflight.current.get(key) === requestId) inflight.current.delete(key);
       }
     },
     [baseUrl, headers, currency],
@@ -979,8 +981,12 @@ export default function TokenAssetsWidget({
         ? "Historical prices are temporarily rate-limited. Please retry shortly; your last cached data remains available when possible."
         : "Historical price history is temporarily unavailable. Please retry in a moment.");
     });
-    return () => { alive = false; controller.abort(); };
-  }, [selId, tf, ensureChart, updatedAt, selected?.chartId, chartRetry]);
+    return () => {
+      alive = false;
+      controller.abort();
+      inflight.current.delete(`${chartId}:${tf}:${currency}`);
+    };
+  }, [selId, tf, ensureChart, updatedAt, selected?.chartId, chartRetry, currency]);
 
   /* ---- chart view model ---- */
   const chartDataId = selected?.chartId ?? selected?.id;
