@@ -269,8 +269,8 @@ async function fetchMarketsUncached(
 ): Promise<Record<string, MarketInfo>> {
   const out: Record<string, MarketInfo> = {};
   if (ids.length === 0) return out;
-  for (let i = 0; i < ids.length; i += 200) {
-    const chunk = ids.slice(i, i + 200);
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
     const rows = await getJSON<RawMarket[]>(
       `${base}/coins/markets?vs_currency=${currency}&ids=${encodeURIComponent(chunk.join(","))}&per_page=250&page=1&sparkline=false&price_change_percentage=24h`,
       headers,
@@ -707,13 +707,22 @@ function Chart({ pts, tf, error, hover, onHover, animKey, currency, onRetry }: C
 /* Widget                                                              */
 /* ------------------------------------------------------------------ */
 
+function getSubtlePayApiBaseUrl(): string {
+  const configured = ((import.meta.env.VITE_SUBTLEPAY_API_BASE_URL as string | undefined) ?? "").trim().replace(/\/+$/, "");
+  if (configured) return configured;
+  if (typeof window === "undefined") return "http://127.0.0.1:4000";
+  if (["localhost", "127.0.0.1"].includes(window.location.hostname) && window.location.port === "5173") {
+    return "http://127.0.0.1:4000";
+  }
+  return window.location.origin;
+}
+
 export default function TokenAssetsWidget({
   holdings = EMPTY_HOLDINGS,
   walletConnected: walletConnectedProp = false,
   pinned = DEFAULT_PINNED,
   apiKey,
-  baseUrl = "https://api.coingecko.com/api/v3",
-  keyHeader = "x-cg-demo-api-key",
+  baseUrl = getSubtlePayApiBaseUrl(),
   currency: currencyProp,
   refreshMs = 120000,
   defaultTimeframe = "1D",
@@ -724,7 +733,8 @@ export default function TokenAssetsWidget({
   onSelect,
   onConnectWallet,
 }: TokenAssetsWidgetProps) {
-  const headers = useMemo<Record<string, string>>(() => (apiKey ? { [keyHeader]: apiKey } : {}), [apiKey, keyHeader]);
+  // All market-data requests go through our backend; no provider key is sent by the browser.
+  const headers = useMemo<Record<string, string>>(() => ({}), []);
   const visibleHeld = visibleHeldProp ?? visibleTokens ?? 3;
   const [currency, setCurrency] = useState(() => (currencyProp || readDefaultCurrency()).toLowerCase());
   const [currencyMenuOpen, setCurrencyMenuOpen] = useState(false);
