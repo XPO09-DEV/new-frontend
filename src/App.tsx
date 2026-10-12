@@ -131,8 +131,9 @@ export default function App() {
     setWalletError("Sign in to use the Subtle Pay account wallet. External wallet transfers are disabled in this testnet payment flow.");
   }, []);
 
-  const disconnectWallet = useCallback(() => {
-    void logoutAccount().catch(() => undefined);
+  const disconnectWallet = useCallback(async () => {
+    // Clear the backend refresh cookie before returning to the sign-in screen.
+    await logoutAccount().catch(() => undefined);
     setAccountProfile(null);
     setWalletAddress(null);
     setWalletChainId(null);
