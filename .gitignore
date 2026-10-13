@@ -26,6 +26,11 @@ coverage/
 *.njsproj
 *.sln
 *.sw?
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
 *.db
 *.sqlite
 *.sqlite3
